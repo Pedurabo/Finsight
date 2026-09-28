@@ -75,179 +75,7 @@ export function scopeDirectlyModifiesMetric(
   return pattern.test(question);
 }
 
-export type FinancialEvidenceRevision =
-  | "original"
-  | "restated"
-  | "unknown";
-
-export function classifyFinancialEvidenceRevision(
-  context: string,
-): FinancialEvidenceRevision {
-  const normalized =
-    context.toLowerCase();
-
-  const headingMatch =
-    /\b(?:segment\s+)?results\s+of\s+operations\b/i.exec(
-      context,
-    );
-
-  if (!headingMatch) {
-    return "unknown";
-  }
-
-  const headingIndex =
-    headingMatch.index;
-
-  const beforeHeading =
-    normalized.slice(
-      Math.max(0, headingIndex - 24),
-      headingIndex,
-    );
-
-  const headingAndAfter =
-    normalized.slice(
-      headingIndex,
-      headingIndex + 100,
-    );
-
-  if (
-    /\b(?:restated|revised)\s*$/.test(
-      beforeHeading.trim(),
-    ) ||
-    /\bas\s+adjusted\b/.test(
-      headingAndAfter,
-    )
-  ) {
-    return "restated";
-  }
-
-  if (
-    /\b(?:restated|revised)\b/.test(
-      beforeHeading,
-    )
-  ) {
-    return "unknown";
-  }
-
-  return "original";
-}
-export type RevisionTaggedEvidence = {
-  value: string;
-  revision: FinancialEvidenceRevision;
-};
-
-export type RevisionConflictResolution<T> =
-  | {
-      status: "selected";
-      candidate: T;
-    }
-  | {
-      status: "ambiguous";
-    };
-
-export type RevisionAwareEvidenceCandidate = {
-  value: string | number;
-  context: string;
-};
-
-export function resolveRevisionAwareEvidenceCandidates<
-  T extends RevisionAwareEvidenceCandidate,
->(
-  candidates: T[],
-): RevisionConflictResolution<T> {
-  const taggedCandidates =
-    candidates.map((candidate) => ({
-      candidate,
-      value: String(candidate.value),
-      revision:
-        classifyFinancialEvidenceRevision(
-          candidate.context,
-        ),
-    }));
-
-  const resolution =
-    resolveFinancialEvidenceRevisionConflict(
-      taggedCandidates,
-    );
-
-  if (resolution.status === "ambiguous") {
-    return {
-      status: "ambiguous",
-    };
-  }
-
-  return {
-    status: "selected",
-    candidate:
-      resolution.candidate.candidate,
-  };
-}
-export function resolveFinancialEvidenceRevisionConflict<
-  T extends RevisionTaggedEvidence,
->(
-  candidates: T[],
-): RevisionConflictResolution<T> {
-  if (candidates.length === 0) {
-    return {
-      status: "ambiguous",
-    };
-  }
-
-  if (candidates.length === 1) {
-    return {
-      status: "selected",
-      candidate: candidates[0],
-    };
-  }
-
-  const distinctValues =
-    new Set(
-      candidates.map(
-        (candidate) => candidate.value,
-      ),
-    );
-
-  if (distinctValues.size === 1) {
-    const preferred =
-      candidates.find(
-        (candidate) =>
-          candidate.revision === "restated",
-      ) ?? candidates[0];
-
-    return {
-      status: "selected",
-      candidate: preferred,
-    };
-  }
-
-  if (
-    candidates.some(
-      (candidate) =>
-        candidate.revision === "unknown",
-    )
-  ) {
-    return {
-      status: "ambiguous",
-    };
-  }
-
-  const restatedCandidates =
-    candidates.filter(
-      (candidate) =>
-        candidate.revision === "restated",
-    );
-
-  if (restatedCandidates.length === 1) {
-    return {
-      status: "selected",
-      candidate: restatedCandidates[0],
-    };
-  }
-
-  return {
-    status: "ambiguous",
-  };
-}
+export * from "./evidencePolicy";
 export function detectDirectMetricScopes(
   question: string,
   metric: string,
@@ -422,6 +250,158 @@ export function extractQuestionYears(
   ].map((match) => match[0]);
 }
 
+export function normalizeFinancialOperandPair(
+  first: {
+    value: number;
+    currency?: string | null;
+    unit?: string | null;
+    currencyStatus?:
+      | "known"
+      | "unknown"
+      | "ambiguous";
+    unitStatus?:
+      | "known"
+      | "unknown"
+      | "ambiguous";
+  },
+  second: {
+    value: number;
+    currency?: string | null;
+    unit?: string | null;
+    currencyStatus?:
+      | "known"
+      | "unknown"
+      | "ambiguous";
+    unitStatus?:
+      | "known"
+      | "unknown"
+      | "ambiguous";
+  },
+):
+  | {
+      status: "compatible";
+      firstValue: number;
+      secondValue: number;
+      unit: string | null;
+    }
+  | {
+      status: "incompatible";
+    } {
+  if (
+    first.currencyStatus === "ambiguous" ||
+    second.currencyStatus === "ambiguous" ||
+    first.unitStatus === "ambiguous" ||
+    second.unitStatus === "ambiguous"
+  ) {
+    return {
+      status: "incompatible",
+    };
+  }
+
+  const firstCurrency =
+    first.currency ?? null;
+
+  const secondCurrency =
+    second.currency ?? null;
+
+  if (firstCurrency !== secondCurrency) {
+    return {
+      status: "incompatible",
+    };
+  }
+
+  const firstUnit =
+    first.unit ?? null;
+
+  const secondUnit =
+    second.unit ?? null;
+
+  if (firstUnit === secondUnit) {
+    return {
+      status: "compatible",
+      firstValue: first.value,
+      secondValue: second.value,
+      unit: firstUnit,
+    };
+  }
+
+  if (
+    firstUnit === null ||
+    secondUnit === null
+  ) {
+    return {
+      status: "incompatible",
+    };
+  }
+
+  const scaleFactors: Record<string, number> = {
+    thousand: 1_000,
+    million: 1_000_000,
+    billion: 1_000_000_000,
+  };
+
+  const firstScale =
+    scaleFactors[firstUnit];
+
+  const secondScale =
+    scaleFactors[secondUnit];
+
+  if (
+    firstScale === undefined ||
+    secondScale === undefined
+  ) {
+    return {
+      status: "incompatible",
+    };
+  }
+
+  return {
+    status: "compatible",
+    firstValue: first.value,
+    secondValue:
+      second.value *
+      (secondScale / firstScale),
+    unit: firstUnit,
+  };
+}
+export function haveCompatibleFinancialMetadata(
+  first: {
+    currency?: string | null;
+    unit?: string | null;
+  },
+  second: {
+    currency?: string | null;
+    unit?: string | null;
+  },
+): boolean {
+  if (
+    first.currencyStatus === "ambiguous" ||
+    second.currencyStatus === "ambiguous" ||
+    first.unitStatus === "ambiguous" ||
+    second.unitStatus === "ambiguous"
+  ) {
+    return {
+      status: "incompatible",
+    };
+  }
+
+  const firstCurrency =
+    first.currency ?? null;
+
+  const secondCurrency =
+    second.currency ?? null;
+
+  const firstUnit =
+    first.unit ?? null;
+
+  const secondUnit =
+    second.unit ?? null;
+
+  return (
+    firstCurrency === secondCurrency &&
+    firstUnit === secondUnit
+  );
+}
 export function computeArithmetic(
   operation: ArithmeticOperation,
   first: number,
@@ -584,7 +564,7 @@ export function extractDocumentScopeCandidates(
   const candidates: string[] = [];
 
   const metricPattern =
-    /^(?:revenue|operating income|net income|gross margin)\b/i;
+    /^(?:revenue|operating income|net income|gross margin|assets|liabilities|equity)\b/i;
 
   const rejectedHeadingPattern =
     /^(?:segment results of operations|results of operations|income statements?|balance sheets?|cash flows?|\(?in millions\b.*|202\d\b)/i;
@@ -753,6 +733,14 @@ export function selectArithmeticOperands<
       `The ${operation.replace("_", " ")} operation requires an explicit operand order, but the question does not provide one.`,
   };
 }
+
+
+
+
+
+
+
+
 
 
 

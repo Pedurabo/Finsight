@@ -1,3 +1,5 @@
+import { classifyFinancialEvidenceRevision } from "./evidencePolicy";
+
 export type ExtractionSource =
   | "embedded_text"
   | "ocr";
@@ -11,10 +13,39 @@ export type ExtractedPage = {
 export type DirectNumericMatch = {
   value: string;
   currency: string | null;
+  currencyStatus:
+    | "known"
+    | "unknown"
+    | "ambiguous";
   unit: string | null;
+  unitStatus:
+    | "known"
+    | "unknown"
+    | "ambiguous";
   period: string | null;
   context: string;
 };
+
+const SUPPORTED_CURRENCY_CODES = new Set([
+  "AED", "AFN", "ALL", "AMD", "AOA", "ARS", "AUD", "AWG", "AZN",
+  "BAM", "BBD", "BDT", "BHD", "BIF", "BMD", "BND", "BOB", "BRL",
+  "BSD", "BTN", "BWP", "BYN", "BZD", "CAD", "CDF", "CHF", "CLP",
+  "CNY", "COP", "CRC", "CUP", "CVE", "CZK", "DJF", "DKK", "DOP",
+  "DZD", "EGP", "ERN", "ETB", "EUR", "FJD", "FKP", "GBP", "GEL",
+  "GHS", "GIP", "GMD", "GNF", "GTQ", "GYD", "HKD", "HNL", "HTG",
+  "HUF", "IDR", "ILS", "INR", "IQD", "IRR", "ISK", "JMD", "JOD",
+  "JPY", "KES", "KGS", "KHR", "KMF", "KPW", "KRW", "KWD", "KYD",
+  "KZT", "LAK", "LBP", "LKR", "LRD", "LSL", "LYD", "MAD", "MDL",
+  "MGA", "MKD", "MMK", "MNT", "MOP", "MRU", "MUR", "MVR", "MWK",
+  "MXN", "MYR", "MZN", "NAD", "NGN", "NIO", "NOK", "NPR", "NZD",
+  "OMR", "PAB", "PEN", "PGK", "PHP", "PKR", "PLN", "PYG", "QAR",
+  "RON", "RSD", "RUB", "RWF", "SAR", "SBD", "SCR", "SDG", "SEK",
+  "SGD", "SHP", "SLE", "SOS", "SRD", "SSP", "STN", "SVC", "SYP",
+  "SZL", "THB", "TJS", "TMT", "TND", "TOP", "TRY", "TTD", "TWD",
+  "TZS", "UAH", "UGX", "USD", "UYU", "UZS", "VES", "VND", "VUV",
+  "WST", "XAF", "XCD", "XCG", "XOF", "XPF", "YER", "ZAR", "ZMW",
+  "ZWG",
+]);
 
 export function extractFinancialTableValues(
   metric: string,
@@ -35,8 +66,8 @@ export function extractFinancialTableValues(
   // "Microsoft 365 Commercial revenue is mainly affected..."
   const rowPattern = new RegExp(
     `\\b${escapedMetric}\\b\\s*[:=\\-]?\\s*\\$?\\s*` +
-      `([0-9][0-9,]*(?:\\.[0-9]+)?)\\s+` +
-      `\\$?\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)`,
+      `(\\([0-9][0-9,]*(?:\\.[0-9]+)?\\)|-?[0-9][0-9,]*(?:\\.[0-9]+)?)\\s+` +
+      `\\$?\\s*(\\([0-9][0-9,]*(?:\\.[0-9]+)?\\)|-?[0-9][0-9,]*(?:\\.[0-9]+)?)`,
     "gi",
   );
 
@@ -193,6 +224,26 @@ export function extractFinancialTableValues(
     const secondValue =
       rowMatch[2];
 
+    const normalizeTableValue = (
+      value: string,
+    ): string => {
+      const trimmed = value.trim();
+
+      const isParenthesized =
+        trimmed.startsWith("(") &&
+        trimmed.endsWith(")");
+
+      const normalized =
+        trimmed.replace(
+          /[(),]/g,
+          "",
+        );
+
+      return isParenthesized
+        ? `-${normalized}`
+        : normalized;
+    };
+
     let headerStart = Math.max(
       0,
       rowIndex - 260,
@@ -321,12 +372,14 @@ export function extractFinancialTableValues(
       ),
     ];
 
-    const nearestScaleMatch =
-      explicitScaleMatches.length > 0
-        ? explicitScaleMatches[
-            explicitScaleMatches.length - 1
-          ]
-        : null;
+    const explicitScales = [
+      ...new Set(
+        explicitScaleMatches.map(
+          (match) =>
+            match[1].toLowerCase(),
+        ),
+      ),
+    ];
 
     const fallbackUnitMatch =
       metadataContext.match(
@@ -334,34 +387,83 @@ export function extractFinancialTableValues(
       );
 
     const unit =
-      nearestScaleMatch?.[1]?.toLowerCase() ??
-      fallbackUnitMatch?.[1]?.toLowerCase() ??
-      null;
+      explicitScales.length > 1
+        ? null
+        : explicitScales.length === 1
+          ? explicitScales[0]
+          : fallbackUnitMatch?.[1]?.toLowerCase() ??
+            null;
+    const explicitCurrencyCodes = [
+      ...new Set(
+        (
+          metadataContext.match(
+            /\b[A-Z]{3}\b/gi,
+          ) ?? []
+        )
+          .map((code) =>
+            code.toUpperCase(),
+          )
+          .filter((code) =>
+            SUPPORTED_CURRENCY_CODES.has(
+              code,
+            ),
+          ),
+      ),
+    ];
+
     const currency =
-      rowMatch[0].includes("$") ||
-      metadataContext.includes("$")
-        ? "USD"
-        : null;
+      explicitCurrencyCodes.length > 1
+        ? null
+        : explicitCurrencyCodes.length === 1
+          ? explicitCurrencyCodes[0]
+          : (
+              rowMatch[0].includes("$") ||
+              metadataContext.includes("$")
+                ? "USD"
+                : null
+            );    const currencyStatus:
+      | "known"
+      | "unknown"
+      | "ambiguous" =
+      explicitCurrencyCodes.length > 1
+        ? "ambiguous"
+        : currency !== null
+          ? "known"
+          : "unknown";
+
+    const unitStatus:
+      | "known"
+      | "unknown"
+      | "ambiguous" =
+      explicitScales.length > 1
+        ? "ambiguous"
+        : unit !== null
+          ? "known"
+          : "unknown";
+
+
 
     results.push(
       {
-        value: firstValue.replace(
-          /,/g,
-          "",
+        value: normalizeTableValue(
+          firstValue,
         ),
         currency,
+        currencyStatus,
         unit,
         period: years[0],
+        unitStatus,
         context,
       },
       {
-        value: secondValue.replace(
-          /,/g,
-          "",
+        value: normalizeTableValue(
+          secondValue,
         ),
         currency,
+        currencyStatus,
         unit,
         period: years[1],
+        unitStatus,
         context,
       },
     );
@@ -435,8 +537,17 @@ export type ArithmeticOperand = {
   pageNumber: number;
   source: ExtractionSource;
   period: string | null;
+  revision: "original" | "restated" | "unknown";
   currency?: string | null;
+  currencyStatus?:
+    | "known"
+    | "unknown"
+    | "ambiguous";
   unit?: string | null;
+  unitStatus?:
+    | "known"
+    | "unknown"
+    | "ambiguous";
   context: string;
 };
 export function collectTableArithmeticOperands(
@@ -482,43 +593,110 @@ export function collectTableArithmeticOperands(
         source: page.source,
         period: match.period,
         currency: match.currency,
+        currencyStatus:
+          match.currencyStatus,
         unit: match.unit,
+        unitStatus:
+          match.unitStatus,
         context: match.context,
+        revision:
+          classifyFinancialEvidenceRevision(
+            match.context,
+          ),
       });
     }
   }
 
-  const uniqueOperands =
-    new Map<string, ArithmeticOperand>();
+  const uniqueOperands: ArithmeticOperand[] = [];
 
   for (const operand of operands) {
-    const key = [
-      operand.period,
-      operand.value,
-    ].join("|");
+    const matchingIndex =
+      uniqueOperands.findIndex((existing) => {
+        if (
+          existing.period !== operand.period ||
+          existing.value !== operand.value
+        ) {
+          return false;
+        }
 
-    const existing =
-      uniqueOperands.get(key);
+        
+        if (
+          existing.revision !==
+          operand.revision
+        ) {
+          return false;
+        }
+const exactMetadataMatch =
+          (existing.currency ?? null) ===
+            (operand.currency ?? null) &&
+          (existing.currencyStatus ?? null) ===
+            (operand.currencyStatus ?? null) &&
+          (existing.unit ?? null) ===
+            (operand.unit ?? null) &&
+          (existing.unitStatus ?? null) ===
+            (operand.unitStatus ?? null);
 
-    if (!existing) {
-      uniqueOperands.set(key, operand);
+        if (exactMetadataMatch) {
+          return true;
+        }
+
+        const hasAmbiguousMetadata =
+          existing.currencyStatus === "ambiguous" ||
+          operand.currencyStatus === "ambiguous" ||
+          existing.unitStatus === "ambiguous" ||
+          operand.unitStatus === "ambiguous";
+
+        if (hasAmbiguousMetadata) {
+          return false;
+        }
+
+        const currenciesCompatible =
+          existing.currency == null ||
+          operand.currency == null ||
+          existing.currency === operand.currency;
+
+        const unitsCompatible =
+          existing.unit == null ||
+          operand.unit == null ||
+          existing.unit === operand.unit;
+
+        return (
+          currenciesCompatible &&
+          unitsCompatible
+        );
+      });
+
+    if (matchingIndex === -1) {
+      uniqueOperands.push(operand);
       continue;
     }
+
+    const existing =
+      uniqueOperands[matchingIndex];
 
     const existingScore =
       (existing.currency ? 1 : 0) +
       (existing.unit ? 1 : 0);
 
     const operandScore =
-      (operand.currency ? 1 : 0) +
-      (operand.unit ? 1 : 0);
+    (operand.currency ? 1 : 0) +
+    (operand.unit ? 1 : 0);
 
-    if (operandScore > existingScore) {
-      uniqueOperands.set(key, operand);
-    }
+  const shouldPreferOperand =
+    operandScore > existingScore ||
+    (
+      operandScore === existingScore &&
+      existing.source === "ocr" &&
+      operand.source === "embedded_text"
+    );
+
+  if (shouldPreferOperand) {
+    uniqueOperands[matchingIndex] =
+      operand;
+  }
   }
 
-  return [...uniqueOperands.values()];
+  return uniqueOperands;
 }
 
 
@@ -614,7 +792,15 @@ export function extractNumberNearMetric(
     return {
       value: match[2].replace(/,/g, ""),
       currency,
+      currencyStatus:
+        currency !== null
+          ? "known"
+          : "unknown",
       unit,
+      unitStatus:
+        unit !== null
+          ? "known"
+          : "unknown",
       period,
       context,
     };
@@ -746,17 +932,113 @@ export function extractMetricValues(
           match[0].length,
         );
 
+            const explicitCurrencyCodes = [
+        ...new Set(
+          (
+            context.match(
+              /\b[A-Z]{3}\b/gi,
+            ) ?? []
+          )
+            .map((code) =>
+              code.toUpperCase(),
+            )
+            .filter((code) =>
+              SUPPORTED_CURRENCY_CODES.has(
+                code,
+              ),
+            ),
+        ),
+      ];
+
+      const currency =
+        explicitCurrencyCodes.length > 1
+          ? null
+          : explicitCurrencyCodes.length === 1
+            ? explicitCurrencyCodes[0]
+            : context.includes("$")
+              ? "USD"
+              : null;
+
+      const currencyStatus =
+        explicitCurrencyCodes.length > 1
+          ? "ambiguous"
+          : currency !== null
+            ? "known"
+            : "unknown";
+
+      const narrativeScales = [
+        ...new Set(
+          (
+            context.match(
+              /\b(?:thousand|million|billion)s?\b/gi,
+            ) ?? []
+          ).map((scale) =>
+            scale
+              .toLowerCase()
+              .replace(/s$/, ""),
+          ),
+        ),
+      ];
+
+      const unit =
+        narrativeScales.length > 1
+          ? null
+          : narrativeScales.length === 1
+            ? narrativeScales[0]
+            : null;
+
+      const unitStatus =
+        narrativeScales.length > 1
+          ? "ambiguous"
+          : unit !== null
+            ? "known"
+            : "unknown";
+
       operands.push({
         label: metric.toUpperCase(),
         value,
         pageNumber: page.pageNumber,
         source: page.source,
         period,
+        currency,
+        currencyStatus,
+        unit,
+        unitStatus,
         context,
+        revision:
+          classifyFinancialEvidenceRevision(
+            context,
+          ),
       });
     }
   }
 
   return operands;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

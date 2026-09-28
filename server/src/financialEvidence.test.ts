@@ -1,3 +1,68 @@
+describe("currency detection precedence", () => {
+  it("prefers explicit CAD metadata over dollar symbols", () => {
+    const text = `
+SEGMENT RESULTS OF OPERATIONS
+(CAD in millions)
+2025 2024
+
+North America
+Operating Income $ 1,250 $ 900
+`;
+
+    const matches =
+      extractFinancialTableValues(
+        "operating income",
+        text,
+        "north america",
+        ["north america"],
+      );
+
+    expect(matches).toHaveLength(2);
+
+    expect(matches[0]).toMatchObject({
+      value: "1250",
+      currency: "CAD",
+      unit: "million",
+      period: "2025",
+    });
+
+    expect(matches[1]).toMatchObject({
+      value: "900",
+      currency: "CAD",
+      unit: "million",
+      period: "2024",
+    });
+  });
+
+  it("normalizes lowercase explicit currency codes to uppercase", () => {
+    const text = `
+SEGMENT RESULTS OF OPERATIONS
+(eur in millions)
+2025 2024
+
+North America
+Operating Income 1,250 900
+`;
+
+    const matches =
+      extractFinancialTableValues(
+        "operating income",
+        text,
+        "north america",
+        ["north america"],
+      );
+
+    expect(matches).toHaveLength(2);
+
+    expect(matches[0]).toMatchObject({
+      currency: "EUR",
+    });
+
+    expect(matches[1]).toMatchObject({
+      currency: "EUR",
+    });
+  });
+});
 import {
   describe,
   expect,
@@ -246,6 +311,309 @@ Revenue $ 80,000 $ 75,000 7%
     expect(period).toBe("2025");
   });
 
+  it("recognizes supported international ISO currency codes from table context", () => {
+    const cases = [
+      ["EUR", "million"],
+      ["GBP", "million"],
+      ["JPY", "billion"],
+      ["KES", "million"],
+      ["UGX", "billion"],
+    ] as const;
+
+    for (const [currencyCode, unit] of cases) {
+      const text = `
+SEGMENT RESULTS OF OPERATIONS
+(${currencyCode} in ${unit}s)
+2025 2024
+
+North America
+Operating Income 1,250 900
+`;
+
+      const matches =
+        extractFinancialTableValues(
+          "operating income",
+          text,
+          "north america",
+          ["north america"],
+        );
+
+      expect(matches).toHaveLength(2);
+
+      expect(matches[0]).toMatchObject({
+        value: "1250",
+        currency: currencyCode,
+        unit,
+        period: "2025",
+      });
+
+      expect(matches[1]).toMatchObject({
+        value: "900",
+        currency: currencyCode,
+        unit,
+        period: "2024",
+      });
+    }
+  });
+
+  it("does not treat an unsupported three-letter code as currency", () => {
+    const text = `
+SEGMENT RESULTS OF OPERATIONS
+(ABC in millions)
+2025 2024
+
+North America
+Operating Income 1,250 900
+`;
+
+    const matches =
+      extractFinancialTableValues(
+        "operating income",
+        text,
+        "north america",
+        ["north america"],
+      );
+
+    expect(matches).toHaveLength(2);
+
+    expect(matches[0]).toMatchObject({
+      value: "1250",
+      currency: null,
+      unit: "million",
+      period: "2025",
+    });
+
+    expect(matches[1]).toMatchObject({
+      value: "900",
+      currency: null,
+      unit: "million",
+      period: "2024",
+    });
+  });
+  it("preserves currency provenance from table context when row symbols are absent", () => {
+    const text = `
+SEGMENT RESULTS OF OPERATIONS
+(USD in millions)
+2025 2024
+
+North America
+Operating Income 1,250 900
+`;
+
+    const matches =
+      extractFinancialTableValues(
+        "operating income",
+        text,
+        "north america",
+        ["north america"],
+      );
+
+    expect(matches).toHaveLength(2);
+
+    expect(matches[0]).toMatchObject({
+      value: "1250",
+      currency: "USD",
+      unit: "million",
+      period: "2025",
+    });
+
+    expect(matches[1]).toMatchObject({
+      value: "900",
+      currency: "USD",
+      unit: "million",
+      period: "2024",
+    });
+  });
+  it("preserves currency provenance when the symbol appears only on the first table value", () => {
+    const text = `
+SEGMENT RESULTS OF OPERATIONS
+(In millions)
+2025 2024
+
+North America
+Operating Income $ 1,250 900
+`;
+
+    const matches =
+      extractFinancialTableValues(
+        "operating income",
+        text,
+        "north america",
+        ["north america"],
+      );
+
+    expect(matches).toHaveLength(2);
+
+    expect(matches[0]).toMatchObject({
+      value: "1250",
+      currency: "USD",
+      unit: "million",
+      period: "2025",
+    });
+
+    expect(matches[1]).toMatchObject({
+      value: "900",
+      currency: "USD",
+      unit: "million",
+      period: "2024",
+    });
+  });
+  it("ignores trailing percentage columns in financial table rows", () => {
+    const text = `
+SEGMENT RESULTS OF OPERATIONS
+(In millions)
+2025 2024 PercentageChange
+
+North America
+Operating Income $ 1,250 $ 900 38.9%
+`;
+
+    const matches =
+      extractFinancialTableValues(
+        "operating income",
+        text,
+        "north america",
+        ["north america"],
+      );
+
+    expect(matches).toHaveLength(2);
+
+    expect(matches[0]).toMatchObject({
+      value: "1250",
+      currency: "USD",
+      unit: "million",
+      period: "2025",
+    });
+
+    expect(matches[1]).toMatchObject({
+      value: "900",
+      currency: "USD",
+      unit: "million",
+      period: "2024",
+    });
+  });
+  it("does not fabricate numeric evidence from dash-style financial cells", () => {
+    const text = `
+SEGMENT RESULTS OF OPERATIONS
+(In millions)
+2025 2024
+
+North America
+Operating Income $ — $ 900
+`;
+
+    const matches =
+      extractFinancialTableValues(
+        "operating income",
+        text,
+        "north america",
+        ["north america"],
+      );
+
+    expect(matches).toEqual([]);
+  });
+  it("extracts decimal negative financial table values", () => {
+    const text = `
+SEGMENT RESULTS OF OPERATIONS
+(In millions)
+2025 2024
+
+North America
+Operating Income $ (1,250.5) $ -900.25
+`;
+
+    const matches =
+      extractFinancialTableValues(
+        "operating income",
+        text,
+        "north america",
+        ["north america"],
+      );
+
+    expect(matches).toHaveLength(2);
+
+    expect(matches[0]).toMatchObject({
+      value: "-1250.5",
+      currency: "USD",
+      unit: "million",
+      period: "2025",
+    });
+
+    expect(matches[1]).toMatchObject({
+      value: "-900.25",
+      currency: "USD",
+      unit: "million",
+      period: "2024",
+    });
+  });
+  it("extracts explicit minus-sign financial table values", () => {
+    const text = `
+SEGMENT RESULTS OF OPERATIONS
+(In millions)
+2025 2024
+
+North America
+Operating Income $ -1,250 $ 900
+`;
+
+    const matches =
+      extractFinancialTableValues(
+        "operating income",
+        text,
+        "north america",
+        ["north america"],
+      );
+
+    expect(matches).toHaveLength(2);
+
+    expect(matches[0]).toMatchObject({
+      value: "-1250",
+      currency: "USD",
+      unit: "million",
+      period: "2025",
+    });
+
+    expect(matches[1]).toMatchObject({
+      value: "900",
+      currency: "USD",
+      unit: "million",
+      period: "2024",
+    });
+  });
+  it("extracts parenthesized negative financial table values", () => {
+    const text = `
+SEGMENT RESULTS OF OPERATIONS
+(In millions)
+2025 2024
+
+North America
+Operating Income $ (1,250) $ 900
+`;
+
+    const matches =
+      extractFinancialTableValues(
+        "operating income",
+        text,
+        "north america",
+        ["north america"],
+      );
+
+    expect(matches).toHaveLength(2);
+
+    expect(matches[0]).toMatchObject({
+      value: "-1250",
+      currency: "USD",
+      unit: "million",
+      period: "2025",
+    });
+
+    expect(matches[1]).toMatchObject({
+      value: "900",
+      currency: "USD",
+      unit: "million",
+      period: "2024",
+    });
+  });
   it("collects narrative metric operands with page provenance", () => {
     const operands =
       extractMetricValues(
@@ -317,3 +685,540 @@ Revenue $ 80,000 $ 75,000 7%
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+describe("financial scale ambiguity", () => {
+  it("does not choose a unit when explicit table scale metadata conflicts", () => {
+    const text = `
+SEGMENT RESULTS OF OPERATIONS
+(USD in millions)
+Amounts also presented in billions
+2025 2024
+
+North America
+Operating Income 1,250 900
+`;
+
+    const matches =
+      extractFinancialTableValues(
+        "operating income",
+        text,
+        "north america",
+        ["north america"],
+      );
+
+    expect(matches).toHaveLength(2);
+
+    expect(matches[0]).toMatchObject({
+      value: "1250",
+      currency: "USD",
+      unit: null,
+      period: "2025",
+    });
+
+    expect(matches[1]).toMatchObject({
+      value: "900",
+      currency: "USD",
+      unit: null,
+      period: "2024",
+    });
+  });
+});
+
+describe("financial currency ambiguity", () => {
+  it("does not choose a currency when explicit table currency metadata conflicts", () => {
+    const text = `
+SEGMENT RESULTS OF OPERATIONS
+(USD in millions)
+Amounts also presented in EUR
+2025 2024
+
+North America
+Operating Income 1,250 900
+`;
+
+    const matches =
+      extractFinancialTableValues(
+        "operating income",
+        text,
+        "north america",
+        ["north america"],
+      );
+
+    expect(matches).toHaveLength(2);
+
+    expect(matches[0]).toMatchObject({
+      value: "1250",
+      currency: null,
+      unit: "million",
+      period: "2025",
+    });
+
+    expect(matches[1]).toMatchObject({
+      value: "900",
+      currency: null,
+      unit: "million",
+      period: "2024",
+    });
+  });
+});
+
+describe("currency-symbol precedence stability", () => {
+  it("keeps a single explicit EUR code authoritative over dollar symbols", () => {
+    const text = `
+SEGMENT RESULTS OF OPERATIONS
+(EUR in millions)
+2025 2024
+
+North America
+Operating Income $ 1,250 $ 900
+`;
+
+    const matches =
+      extractFinancialTableValues(
+        "operating income",
+        text,
+        "north america",
+        ["north america"],
+      );
+
+    expect(matches).toHaveLength(2);
+
+    expect(matches[0]).toMatchObject({
+      value: "1250",
+      currency: "EUR",
+      unit: "million",
+      period: "2025",
+    });
+
+    expect(matches[1]).toMatchObject({
+      value: "900",
+      currency: "EUR",
+      unit: "million",
+      period: "2024",
+    });
+  });
+});
+
+describe("repeated financial metadata consistency", () => {
+  it("keeps repeated identical currency and scale metadata authoritative", () => {
+    const text = `
+SEGMENT RESULTS OF OPERATIONS
+(USD in millions)
+Amounts in USD millions
+2025 2024
+
+North America
+Operating Income 1,250 900
+`;
+
+    const matches =
+      extractFinancialTableValues(
+        "operating income",
+        text,
+        "north america",
+        ["north america"],
+      );
+
+    expect(matches).toHaveLength(2);
+
+    expect(matches[0]).toMatchObject({
+      value: "1250",
+      currency: "USD",
+      unit: "million",
+      period: "2025",
+    });
+
+    expect(matches[1]).toMatchObject({
+      value: "900",
+      currency: "USD",
+      unit: "million",
+      period: "2024",
+    });
+  });
+});
+
+describe("supported currency filtering", () => {
+  it("ignores unsupported codes when one supported currency is explicit", () => {
+    const text = `
+SEGMENT RESULTS OF OPERATIONS
+(USD in millions)
+Internal classification ABC
+2025 2024
+
+North America
+Operating Income 1,250 900
+`;
+
+    const matches =
+      extractFinancialTableValues(
+        "operating income",
+        text,
+        "north america",
+        ["north america"],
+      );
+
+    expect(matches).toHaveLength(2);
+
+    expect(matches[0]).toMatchObject({
+      value: "1250",
+      currency: "USD",
+      unit: "million",
+      period: "2025",
+    });
+
+    expect(matches[1]).toMatchObject({
+      value: "900",
+      currency: "USD",
+      unit: "million",
+      period: "2024",
+    });
+  });
+});
+
+describe("scale metadata filtering", () => {
+  it("ignores unrelated scale-like wording when one explicit table scale is present", () => {
+    const text = `
+SEGMENT RESULTS OF OPERATIONS
+(USD in millions)
+Billion-dollar market commentary
+2025 2024
+
+North America
+Operating Income 1,250 900
+`;
+
+    const matches =
+      extractFinancialTableValues(
+        "operating income",
+        text,
+        "north america",
+        ["north america"],
+      );
+
+    expect(matches).toHaveLength(2);
+
+    expect(matches[0]).toMatchObject({
+      value: "1250",
+      currency: "USD",
+      unit: "million",
+      period: "2025",
+    });
+
+    expect(matches[1]).toMatchObject({
+      value: "900",
+      currency: "USD",
+      unit: "million",
+      period: "2024",
+    });
+  });
+});
+
+describe("arithmetic operand metadata deduplication", () => {
+  it("preserves same-value operands when financial metadata differs", () => {
+    const pages = [
+      {
+        pageNumber: 1,
+        source: "embedded_text" as const,
+        text: `
+SEGMENT RESULTS OF OPERATIONS
+(USD in millions)
+2025 2024
+
+North America
+Operating Income 1,250 900
+`,
+      },
+      {
+        pageNumber: 2,
+        source: "embedded_text" as const,
+        text: `
+SEGMENT RESULTS OF OPERATIONS
+(USD in millions)
+Amounts also presented in billions
+2025 2024
+
+North America
+Operating Income 1,250 900
+`,
+      },
+    ];
+
+    const operands =
+      collectTableArithmeticOperands(
+        pages,
+        "operating income",
+        "north america",
+        ["2025"],
+        "NORTH AMERICA OPERATING INCOME",
+        ["north america"],
+      );
+
+    expect(operands).toHaveLength(2);
+
+    expect(
+      operands.map((operand) => ({
+        currency: operand.currency,
+        currencyStatus:
+          operand.currencyStatus,
+        unit: operand.unit,
+        unitStatus:
+          operand.unitStatus,
+      })),
+    ).toEqual(
+      expect.arrayContaining([
+        {
+          currency: "USD",
+          currencyStatus: "known",
+          unit: "million",
+          unitStatus: "known",
+        },
+        {
+          currency: "USD",
+          currencyStatus: "known",
+          unit: null,
+          unitStatus: "ambiguous",
+        },
+      ]),
+    );
+  });
+});
+
+describe("narrative metadata status propagation", () => {
+  it("preserves known narrative currency and unit status in arithmetic operands", () => {
+    const pages = [
+      {
+        pageNumber: 3,
+        source: "embedded_text" as const,
+        text: `
+For 2025, revenue 125 million USD.
+`,
+      },
+    ];
+
+    const operands =
+      extractMetricValues(
+        "revenue",
+        pages,
+      );
+
+    expect(operands).toHaveLength(1);
+
+    expect(operands[0]).toMatchObject({
+      value: 125,
+      currency: "USD",
+      currencyStatus: "known",
+      unit: "million",
+      unitStatus: "known",
+      period: "2025",
+    });
+  });
+
+  it("marks missing narrative currency and unit metadata as unknown", () => {
+    const pages = [
+      {
+        pageNumber: 4,
+        source: "embedded_text" as const,
+        text: `
+For 2025, revenue 125.
+`,
+      },
+    ];
+
+    const operands =
+      extractMetricValues(
+        "revenue",
+        pages,
+      );
+
+    expect(operands).toHaveLength(1);
+
+    expect(operands[0]).toMatchObject({
+      value: 125,
+      currency: null,
+      currencyStatus: "unknown",
+      unit: null,
+      unitStatus: "unknown",
+      period: "2025",
+    });
+  });
+});
+
+
+
+
+describe("narrative scale ambiguity", () => {
+  it("marks conflicting narrative scale metadata as ambiguous", () => {
+    const pages = [
+      {
+        pageNumber: 5,
+        source: "embedded_text" as const,
+        text: `
+For 2025, revenue 125 million.
+Amounts are also described in billions.
+`,
+      },
+    ];
+
+    const operands =
+      extractMetricValues(
+        "revenue",
+        pages,
+      );
+
+    expect(operands).toHaveLength(1);
+
+    expect(operands[0]).toMatchObject({
+      value: 125,
+      unit: null,
+      unitStatus: "ambiguous",
+      period: "2025",
+    });
+  });
+});
+
+describe("narrative currency ambiguity", () => {
+  it("marks conflicting narrative currency metadata as ambiguous", () => {
+    const pages = [
+      {
+        pageNumber: 6,
+        source: "embedded_text" as const,
+        text: `
+For 2025, revenue 125 million USD.
+Amounts are also described in EUR.
+`,
+      },
+    ];
+
+    const operands =
+      extractMetricValues(
+        "revenue",
+        pages,
+      );
+
+    expect(operands).toHaveLength(1);
+
+    expect(operands[0]).toMatchObject({
+      value: 125,
+      currency: null,
+      currencyStatus: "ambiguous",
+      unit: "million",
+      unitStatus: "known",
+      period: "2025",
+    });
+  });
+});
+
+describe("arithmetic operand revision deduplication", () => {
+  it("preserves same-value original and restated operands for reconciliation", () => {
+    const pages = [
+      {
+        pageNumber: 1,
+        source: "embedded_text" as const,
+        text: `
+SEGMENT RESULTS OF OPERATIONS
+(USD in millions)
+2025 2024
+
+North America
+Revenue 80,000 75,000
+`,
+      },
+      {
+        pageNumber: 2,
+        source: "embedded_text" as const,
+        text: `
+RESTATED SEGMENT RESULTS OF OPERATIONS
+(USD in millions)
+2025 2024
+
+North America
+Revenue 80,000 75,000
+`,
+      },
+    ];
+
+    const operands =
+      collectTableArithmeticOperands(
+        pages,
+        "revenue",
+        "north america",
+        ["2025"],
+        "NORTH AMERICA REVENUE",
+        ["north america"],
+      );
+
+    expect(operands).toHaveLength(2);
+
+    expect(
+      operands.map(
+        (operand) => operand.revision,
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        "original",
+        "restated",
+      ]),
+    );
+  });
+});
+
+describe("arithmetic operand source deduplication", () => {
+  it("prefers embedded text when duplicate operands have equal financial metadata", () => {
+    const pages = [
+      {
+        pageNumber: 1,
+        source: "ocr" as const,
+        text: `
+SEGMENT RESULTS OF OPERATIONS
+(USD in millions)
+2025 2024
+
+North America
+Revenue 80,000 75,000
+`,
+      },
+      {
+        pageNumber: 2,
+        source: "embedded_text" as const,
+        text: `
+SEGMENT RESULTS OF OPERATIONS
+(USD in millions)
+2025 2024
+
+North America
+Revenue 80,000 75,000
+`,
+      },
+    ];
+
+    const operands =
+      collectTableArithmeticOperands(
+        pages,
+        "revenue",
+        "north america",
+        ["2025"],
+        "NORTH AMERICA REVENUE",
+        ["north america"],
+      );
+
+    expect(operands).toHaveLength(1);
+
+    expect(operands[0]).toMatchObject({
+      value: 80000,
+      period: "2025",
+      currency: "USD",
+      unit: "million",
+      source: "embedded_text",
+    });
+  });
+});

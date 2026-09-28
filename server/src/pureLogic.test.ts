@@ -5,10 +5,9 @@ import {
 } from "vitest";
 
 import {
-  resolveRevisionAwareEvidenceCandidates,
-  resolveFinancialEvidenceRevisionConflict,
-  classifyFinancialEvidenceRevision,
   computeArithmetic,
+  haveCompatibleFinancialMetadata,
+  normalizeFinancialOperandPair,
   hasExplicitRatioDirection,
   parseCrossScopeArithmeticRequest,
   orderCrossScopeOperands,
@@ -661,6 +660,209 @@ describe("direct scope textual ordering", () => {
 
 
 
+describe("financial scale normalization", () => {
+  it("keeps matching million-scale operands unchanged", () => {
+    expect(
+      normalizeFinancialOperandPair(
+        {
+          value: 100,
+          currency: "USD",
+          unit: "million",
+        },
+        {
+          value: 80,
+          currency: "USD",
+          unit: "million",
+        },
+      ),
+    ).toEqual({
+      status: "compatible",
+      firstValue: 100,
+      secondValue: 80,
+      unit: "million",
+    });
+  });
+
+  it("converts billions into millions when the first operand is in millions", () => {
+    expect(
+      normalizeFinancialOperandPair(
+        {
+          value: 500,
+          currency: "USD",
+          unit: "million",
+        },
+        {
+          value: 1,
+          currency: "USD",
+          unit: "billion",
+        },
+      ),
+    ).toEqual({
+      status: "compatible",
+      firstValue: 500,
+      secondValue: 1000,
+      unit: "million",
+    });
+  });
+
+  it("converts millions into billions when the first operand is in billions", () => {
+    expect(
+      normalizeFinancialOperandPair(
+        {
+          value: 1,
+          currency: "USD",
+          unit: "billion",
+        },
+        {
+          value: 500,
+          currency: "USD",
+          unit: "million",
+        },
+      ),
+    ).toEqual({
+      status: "compatible",
+      firstValue: 1,
+      secondValue: 0.5,
+      unit: "billion",
+    });
+  });
+
+  it("converts thousands into millions", () => {
+    expect(
+      normalizeFinancialOperandPair(
+        {
+          value: 2,
+          currency: "USD",
+          unit: "million",
+        },
+        {
+          value: 500,
+          currency: "USD",
+          unit: "thousand",
+        },
+      ),
+    ).toEqual({
+      status: "compatible",
+      firstValue: 2,
+      secondValue: 0.5,
+      unit: "million",
+    });
+  });
+
+  it("rejects different currencies even when scales are convertible", () => {
+    expect(
+      normalizeFinancialOperandPair(
+        {
+          value: 1,
+          currency: "USD",
+          unit: "billion",
+        },
+        {
+          value: 500,
+          currency: "EUR",
+          unit: "million",
+        },
+      ),
+    ).toEqual({
+      status: "incompatible",
+    });
+  });
+
+  it("rejects known scale against unknown unit", () => {
+    expect(
+      normalizeFinancialOperandPair(
+        {
+          value: 1,
+          currency: "USD",
+          unit: "million",
+        },
+        {
+          value: 500,
+          currency: "USD",
+          unit: null,
+        },
+      ),
+    ).toEqual({
+      status: "incompatible",
+    });
+  });
+});
+describe("financial metadata compatibility", () => {
+  it("accepts matching known currency and unit", () => {
+    expect(
+      haveCompatibleFinancialMetadata(
+        {
+          currency: "EUR",
+          unit: "million",
+        },
+        {
+          currency: "EUR",
+          unit: "million",
+        },
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects different currencies", () => {
+    expect(
+      haveCompatibleFinancialMetadata(
+        {
+          currency: "USD",
+          unit: "million",
+        },
+        {
+          currency: "EUR",
+          unit: "million",
+        },
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects known currency against unknown currency", () => {
+    expect(
+      haveCompatibleFinancialMetadata(
+        {
+          currency: "USD",
+          unit: "million",
+        },
+        {
+          currency: null,
+          unit: "million",
+        },
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects known unit against unknown unit", () => {
+    expect(
+      haveCompatibleFinancialMetadata(
+        {
+          currency: "USD",
+          unit: "million",
+        },
+        {
+          currency: "USD",
+          unit: null,
+        },
+      ),
+    ).toBe(false);
+  });
+
+  it("accepts two operands with unknown currency and unit", () => {
+    expect(
+      haveCompatibleFinancialMetadata(
+        {
+          currency: null,
+          unit: null,
+        },
+        {
+          currency: null,
+          unit: null,
+        },
+      ),
+    ).toBe(true);
+  });
+});
 describe("document-driven scope candidates", () => {
   it("extracts segment names preceding supported metric rows", () => {
     const text = `
@@ -708,6 +910,28 @@ Operating Income $ 3,100 $ 2,900 7%
     ]);
   });
 
+  it("discovers scopes from balance-sheet metric rows", () => {
+    const text = `
+North America
+Assets $ 120,000 $ 110,000
+
+Europe
+Liabilities $ 70,000 $ 65,000
+
+Asia Pacific
+Equity $ 50,000 $ 45,000
+`;
+
+    expect(
+      extractDocumentScopeCandidates(
+        text,
+      ),
+    ).toEqual([
+      "north america",
+      "europe",
+      "asia pacific",
+    ]);
+  });
   it("rejects generic financial headings as scopes", () => {
     const text = `
 SEGMENT RESULTS OF OPERATIONS
@@ -1001,223 +1225,6 @@ describe("arithmetic operand selection", () => {
   });
 });
 
-  describe("financial evidence revision classification", () => {
-    it("classifies explicit restated evidence", () => {
-      expect(
-        classifyFinancialEvidenceRevision(
-          "RESTATED SEGMENT RESULTS OF OPERATIONS",
-        ),
-      ).toBe("restated");
-    });
-
-    it("classifies explicit revised evidence", () => {
-      expect(
-        classifyFinancialEvidenceRevision(
-          "Revised segment results of operations",
-        ),
-      ).toBe("restated");
-    });
-
-    it("classifies as-adjusted evidence as restated", () => {
-      expect(
-        classifyFinancialEvidenceRevision(
-          "Segment results of operations, as adjusted",
-        ),
-      ).toBe("restated");
-    });
-
-    it("classifies ordinary financial-table evidence as original", () => {
-      expect(
-        classifyFinancialEvidenceRevision(
-          "SEGMENT RESULTS OF OPERATIONS (In millions) 2025 2024",
-        ),
-      ).toBe("original");
-    });
-
-    it("does not infer revision status from weak prose", () => {
-      expect(
-        classifyFinancialEvidenceRevision(
-          "Management discussed revenue trends during the year.",
-        ),
-      ).toBe("unknown");
-    });
-
-    it("does not treat unrelated revision language as restatement evidence", () => {
-      expect(
-        classifyFinancialEvidenceRevision(
-          "The outlook was revised. SEGMENT RESULTS OF OPERATIONS",
-        ),
-      ).toBe("unknown");
-    });
-  });
-
-  describe("financial evidence revision resolution", () => {
-    const original = {
-      value: "80000",
-      revision: "original" as const,
-    };
-
-    const restated = {
-      value: "82000",
-      revision: "restated" as const,
-    };
-
-    it("prefers a single restated value over an original value", () => {
-      const result =
-        resolveFinancialEvidenceRevisionConflict([
-          original,
-          restated,
-        ]);
-
-      expect(result.status).toBe("selected");
-
-      if (result.status === "selected") {
-        expect(result.candidate)
-          .toEqual(restated);
-      }
-    });
-
-    it("selects consistent repeated restated evidence", () => {
-      const repeated = {
-        value: "82000",
-        revision: "restated" as const,
-      };
-
-      const result =
-        resolveFinancialEvidenceRevisionConflict([
-          restated,
-          repeated,
-        ]);
-
-      expect(result.status).toBe("selected");
-
-      if (result.status === "selected") {
-        expect(result.candidate.value)
-          .toBe("82000");
-      }
-    });
-
-    it("abstains on conflicting restated values", () => {
-      const result =
-        resolveFinancialEvidenceRevisionConflict([
-          restated,
-          {
-            value: "83000",
-            revision: "restated" as const,
-          },
-        ]);
-
-      expect(result.status).toBe("ambiguous");
-    });
-
-    it("abstains on conflicting original values", () => {
-      const result =
-        resolveFinancialEvidenceRevisionConflict([
-          original,
-          {
-            value: "81000",
-            revision: "original" as const,
-          },
-        ]);
-
-      expect(result.status).toBe("ambiguous");
-    });
-
-    it("abstains when unknown evidence conflicts with known evidence", () => {
-      const result =
-        resolveFinancialEvidenceRevisionConflict([
-          restated,
-          {
-            value: "83000",
-            revision: "unknown" as const,
-          },
-        ]);
-
-      expect(result.status).toBe("ambiguous");
-    });
-
-    it("selects a single unconflicted candidate", () => {
-      const result =
-        resolveFinancialEvidenceRevisionConflict([
-          original,
-        ]);
-
-      expect(result.status).toBe("selected");
-    });
-  });
-
-  describe("revision-aware evidence candidate resolution", () => {
-    it("returns the original candidate selected by restatement precedence", () => {
-      const original = {
-        value: 80000,
-        context:
-          "SEGMENT RESULTS OF OPERATIONS",
-        pageNumber: 1,
-      };
-
-      const restated = {
-        value: 82000,
-        context:
-          "RESTATED SEGMENT RESULTS OF OPERATIONS",
-        pageNumber: 2,
-      };
-
-      const result =
-        resolveRevisionAwareEvidenceCandidates([
-          original,
-          restated,
-        ]);
-
-      expect(result.status).toBe("selected");
-
-      if (result.status === "selected") {
-        expect(result.candidate)
-          .toEqual(restated);
-      }
-    });
-
-    it("preserves ambiguity for conflicting restated candidates", () => {
-      const result =
-        resolveRevisionAwareEvidenceCandidates([
-          {
-            value: 82000,
-            context:
-              "RESTATED SEGMENT RESULTS OF OPERATIONS",
-          },
-          {
-            value: 83000,
-            context:
-              "RESTATED SEGMENT RESULTS OF OPERATIONS",
-          },
-        ]);
-
-      expect(result.status).toBe("ambiguous");
-    });
-
-    it("handles consistent repeated evidence", () => {
-      const first = {
-        value: "65000",
-        context:
-          "SEGMENT RESULTS OF OPERATIONS",
-        pageNumber: 1,
-      };
-
-      const second = {
-        value: "65000",
-        context:
-          "SEGMENT RESULTS OF OPERATIONS",
-        pageNumber: 2,
-      };
-
-      const result =
-        resolveRevisionAwareEvidenceCandidates([
-          first,
-          second,
-        ]);
-
-      expect(result.status).toBe("selected");
-    });
-  });
 });
 
 
@@ -1230,3 +1237,36 @@ describe("arithmetic operand selection", () => {
 
 
 
+
+
+
+
+
+
+
+
+
+
+it("rejects operands with explicitly ambiguous financial metadata", () => {
+  const result =
+    normalizeFinancialOperandPair(
+      {
+        value: 500,
+        currency: null,
+        unit: null,
+        currencyStatus: "ambiguous",
+        unitStatus: "ambiguous",
+      },
+      {
+        value: 600,
+        currency: null,
+        unit: null,
+        currencyStatus: "ambiguous",
+        unitStatus: "ambiguous",
+      },
+    );
+
+  expect(result).toEqual({
+    status: "incompatible",
+  });
+});

@@ -22,6 +22,7 @@ import {
   resolveFinancialEvidenceRevisionConflict,
   classifyFinancialEvidenceRevision,
   computeArithmetic,
+  normalizeFinancialOperandPair,
   detectArithmeticOperation,
   detectDirectMetricScopes,
   detectFinancialScope,
@@ -30,6 +31,7 @@ import {
   extractQuestionYears,
   selectArithmeticOperands,
   type ArithmeticOperation,
+  type EvidenceSelectionPolicy,
   buildAvailableScopesFromTexts,
   hasExplicitRatioDirection,
   parseCrossScopeArithmeticRequest,
@@ -119,6 +121,71 @@ type DirectNumericClaim = {
 
 app.use(cors());
 app.use(express.json());
+
+const MAX_QUESTION_LENGTH = 2000;
+
+function readExtractionJson<T>(
+  extractionPath: string,
+): T | null {
+  try {
+    const parsed: unknown =
+      JSON.parse(
+        fs.readFileSync(
+          extractionPath,
+          "utf8",
+        ),
+      );
+
+    if (
+      typeof parsed !== "object" ||
+      parsed === null
+    ) {
+      return null;
+    }
+
+    const pages =
+      (parsed as { pages?: unknown }).pages;
+
+    if (!Array.isArray(pages)) {
+      return null;
+    }
+
+    const pagesAreValid =
+      pages.every((page) => {
+        if (
+          typeof page !== "object" ||
+          page === null
+        ) {
+          return false;
+        }
+
+        const candidate =
+          page as {
+            pageNumber?: unknown;
+            source?: unknown;
+            text?: unknown;
+          };
+
+        return (
+          typeof candidate.pageNumber === "number" &&
+          Number.isFinite(candidate.pageNumber) &&
+          (
+            candidate.source === "embedded_text" ||
+            candidate.source === "ocr"
+          ) &&
+          typeof candidate.text === "string"
+        );
+      });
+
+    if (!pagesAreValid) {
+      return null;
+    }
+
+    return parsed as T;
+  } catch {
+    return null;
+  }
+}
 
 app.get("/api/health", (_req, res) => {
   res.json({
@@ -265,24 +332,41 @@ app.post(
 app.get(
   "/api/documents/:id/pages",
   (req, res) => {
-    const documentId = path.basename(req.params.id);
+    const documentId = req.params.id;
+    const safeDocumentId =
+      path.basename(documentId);
+
+    if (safeDocumentId !== documentId) {
+      res.status(400).json({
+        error: "Invalid document identifier.",
+      });
+      return;
+    }
 
     const extractionPath = path.join(
       extractedDirectory,
-      `${documentId}.json`,
+      `${safeDocumentId}.json`,
     );
 
     if (!fs.existsSync(extractionPath)) {
       res.status(404).json({
-        error: "Extraction not found.",
+        error: "Document extraction not found.",
       });
 
       return;
     }
 
-    const extraction = JSON.parse(
-      fs.readFileSync(extractionPath, "utf8"),
-    );
+    const extraction =
+      readExtractionJson<unknown>(
+        extractionPath,
+      );
+
+    if (!extraction) {
+      res.status(500).json({
+        error: "Document extraction is invalid.",
+      });
+      return;
+    }
 
     res.json(extraction);
   },
@@ -301,6 +385,12 @@ app.post(
         error: "A question is required.",
       });
 
+      return;
+    }
+    if (question.length > MAX_QUESTION_LENGTH) {
+      res.status(400).json({
+        error: "Question exceeds maximum length.",
+      });
       return;
     }
 
@@ -329,12 +419,18 @@ app.post(
       return;
     }
 
-    const extraction = JSON.parse(
-      fs.readFileSync(extractionPath, "utf8"),
-    ) as {
-      pageCount: number;
-      pages: ExtractedPage[];
-    };
+    const extraction =
+      readExtractionJson<{
+        pageCount: number;
+        pages: ExtractedPage[];
+      }>(extractionPath);
+
+    if (!extraction) {
+      res.status(500).json({
+        error: "Document extraction is invalid.",
+      });
+      return;
+    }
 
     const queryTokens =
       tokenizeSearchText(question);
@@ -386,6 +482,12 @@ app.post(
       });
       return;
     }
+    if (question.length > MAX_QUESTION_LENGTH) {
+      res.status(400).json({
+        error: "Question exceeds maximum length.",
+      });
+      return;
+    }
 
     const documentId = req.params.id;
     const safeDocumentId = path.basename(documentId);
@@ -409,11 +511,17 @@ app.post(
       return;
     }
 
-    const extraction = JSON.parse(
-      fs.readFileSync(extractionPath, "utf8"),
-    ) as {
-      pages: ExtractedPage[];
-    };
+    const extraction =
+      readExtractionJson<{
+        pages: ExtractedPage[];
+      }>(extractionPath);
+
+    if (!extraction) {
+      res.status(500).json({
+        error: "Document extraction is invalid.",
+      });
+      return;
+    }
 
     const metric = detectMetric(question);
 
@@ -526,6 +634,11 @@ app.post(
               match,
               value: match.value,
               context: match.context,
+              source: page.source,
+              revision:
+                classifyFinancialEvidenceRevision(
+                  match.context,
+                ),
             }),
           ),
         );
@@ -537,6 +650,28 @@ app.post(
           status: "insufficient_evidence",
           reason:
             `FinSight found conflicting ${metric.toUpperCase()} values associated with ${requestedYear} across multiple pages and could not resolve them under the revision-evidence policy.`,
+          reasonCode: "conflicting_evidence",
+          candidates:
+            tableEvidenceAcrossPages.map(
+              ({ page, match }) => ({
+                value: match.value,
+                currency: match.currency,
+                currencyStatus:
+                  match.currencyStatus,
+                unit: match.unit,
+                unitStatus:
+                  match.unitStatus,
+                period: match.period,
+                pageNumber:
+                  page.pageNumber,
+                source: page.source,
+                revision:
+                  classifyFinancialEvidenceRevision(
+                    match.context,
+                  ),
+                snippet: match.context,
+              }),
+            ),
           claim: null,
         });
 
@@ -564,6 +699,8 @@ app.post(
             period: tableMatch.period,
             pageNumber: page.pageNumber,
             source: page.source,
+            revision,
+            selectionPolicy: revisionResolution.selectionPolicy,
             snippet: tableMatch.context,
           },
         });
@@ -691,9 +828,25 @@ app.post(
       });
       return;
     }
+    if (question.length > MAX_QUESTION_LENGTH) {
+      res.status(400).json({
+        error: "Question exceeds maximum length.",
+      });
+      return;
+    }
+
+    const documentId =
+      req.params.id;
 
     const safeDocumentId =
-      path.basename(req.params.id);
+      path.basename(documentId);
+
+    if (safeDocumentId !== documentId) {
+      res.status(400).json({
+        error: "Invalid document identifier.",
+      });
+      return;
+    }
 
     const extractionPath = path.join(
       extractedDirectory,
@@ -707,11 +860,17 @@ app.post(
       return;
     }
 
-    const extraction = JSON.parse(
-      fs.readFileSync(extractionPath, "utf8"),
-    ) as {
-      pages: ExtractedPage[];
-    };
+    const extraction =
+      readExtractionJson<{
+        pages: ExtractedPage[];
+      }>(extractionPath);
+
+    if (!extraction) {
+      res.status(500).json({
+        error: "Document extraction is invalid.",
+      });
+      return;
+    }
 
     const operation =
       detectArithmeticOperation(question);
@@ -721,6 +880,7 @@ app.post(
         status: "insufficient_evidence",
         reason:
           "No supported arithmetic operation was identified.",
+        reasonCode: "unsupported_intent",
         calculation: null,
       });
       return;
@@ -733,6 +893,7 @@ app.post(
         status: "insufficient_evidence",
         reason:
           "No supported numeric metric could be identified.",
+        reasonCode: "unsupported_metric",
         calculation: null,
       });
       return;
@@ -764,6 +925,7 @@ app.post(
           status: "insufficient_evidence",
           reason:
             `FinSight detected multiple requested scopes for ${metric.toUpperCase()} (${directMetricScopes.join(", ")}), but the cross-scope request is ambiguous or unsupported.`,
+          reasonCode: "ambiguous_request",
           candidates: [],
           calculation: null,
         });
@@ -777,7 +939,9 @@ app.post(
         );
 
       const resolvedOperands:
-        ArithmeticOperand[] = [];
+        (ArithmeticOperand & {
+          selectionPolicy: EvidenceSelectionPolicy;
+        })[] = [];
 
       for (const scope of orderedScopes) {
         const dedupedScopedOperands =
@@ -808,44 +972,33 @@ app.post(
           return;
         }
 
-        resolvedOperands.push(
-          scopedResolution.candidate,
-        );
+        resolvedOperands.push({
+          ...scopedResolution.candidate,
+          selectionPolicy:
+            scopedResolution.selectionPolicy,
+        });
       }
 
       const [
         first,
         second,
       ] = resolvedOperands;
+      const normalized =
+        normalizeFinancialOperandPair(
+          first,
+          second,
+        );
 
       if (
-        first.currency &&
-        second.currency &&
-        first.currency !== second.currency
+        normalized.status ===
+        "incompatible"
       ) {
         res.json({
           status:
             "insufficient_evidence",
           reason:
-            "The requested cross-scope values use different currencies.",
-          candidates:
-            resolvedOperands,
-          calculation:
-            null,
-        });
-        return;
-      }
-
-      if (
-        first.unit &&
-        second.unit &&
-        first.unit !== second.unit
-      ) {
-        res.json({
-          status:
-            "insufficient_evidence",
-          reason:
-            "The requested cross-scope values use different units.",
+            "The requested cross-scope values do not have compatible currency and unit metadata.",
+          reasonCode: "incompatible_metadata",
           candidates:
             resolvedOperands,
           calculation:
@@ -857,8 +1010,8 @@ app.post(
       const result =
         computeArithmetic(
           crossScopeRequest.operation,
-          first.value,
-          second.value,
+          normalized.firstValue,
+          normalized.secondValue,
         );
 
       if (result === null) {
@@ -903,9 +1056,7 @@ app.post(
             crossScopeRequest.operation ===
             "ratio"
               ? null
-              : first.unit ??
-                second.unit ??
-                null,
+              : normalized.unit,
           reportedValue:
             null,
           roundingConsistent:
@@ -938,6 +1089,7 @@ app.post(
         status: "insufficient_evidence",
         reason:
           `FinSight detected the requested revenue scope "${requestedRevenueQualifier}", but that scope is not currently supported.`,
+        reasonCode: "unsupported_scope",
         candidates: [],
         calculation: null,
       });
@@ -965,9 +1117,9 @@ app.post(
             "insufficient_evidence",
           reason:
             "The ratio operation requires an explicit operand order, but the question does not provide one.",
+          reasonCode: "ambiguous_request",
           candidates: [],
-          calculation:
-            null,
+          calculation: null,
         });
 
         return;
@@ -995,7 +1147,24 @@ app.post(
             operand.period === secondYear,
         );
 
-      const resolvePeriodCandidates = (
+      
+      if (
+        firstCandidates.length === 0 ||
+        secondCandidates.length === 0
+      ) {
+        res.json({
+          status: "insufficient_evidence",
+          reason:
+            `FinSight could not find sufficient ${metric.toUpperCase()} evidence for both requested periods (${firstYear} and ${secondYear}).`,
+          reasonCode: "missing_evidence",
+          candidates:
+            dedupedOperands,
+          calculation: null,
+        });
+
+        return;
+      }
+const resolvePeriodCandidates = (
         candidates: typeof dedupedOperands,
       ) =>
         resolveRevisionAwareEvidenceCandidates(
@@ -1016,6 +1185,7 @@ app.post(
             "insufficient_evidence",
           reason:
             `FinSight could not uniquely resolve ${metric.toUpperCase()} values for both requested periods (${firstYear} and ${secondYear}) under the revision-evidence policy.`,
+          reasonCode: "conflicting_evidence",
           candidates:
             dedupedOperands,
           calculation:
@@ -1025,11 +1195,17 @@ app.post(
         return;
       }
 
-      let first =
-        firstResolution.candidate;
+      let first = {
+        ...firstResolution.candidate,
+        selectionPolicy:
+          firstResolution.selectionPolicy,
+      };
 
-      let second =
-        secondResolution.candidate;
+      let second = {
+        ...secondResolution.candidate,
+        selectionPolicy:
+          secondResolution.selectionPolicy,
+      };
       if (
         shouldReverseSubtractionOperands(
           question,
@@ -1039,36 +1215,22 @@ app.post(
         [first, second] =
           [second, first];
       }
+      const normalized =
+        normalizeFinancialOperandPair(
+          first,
+          second,
+        );
 
       if (
-        first.currency &&
-        second.currency &&
-        first.currency !== second.currency
+        normalized.status ===
+        "incompatible"
       ) {
         res.json({
           status:
             "insufficient_evidence",
           reason:
-            "The requested values use different currencies.",
-          candidates:
-            [first, second],
-          calculation:
-            null,
-        });
-
-        return;
-      }
-
-      if (
-        first.unit &&
-        second.unit &&
-        first.unit !== second.unit
-      ) {
-        res.json({
-          status:
-            "insufficient_evidence",
-          reason:
-            "The requested values use different units.",
+            "The requested values do not have compatible currency and unit metadata.",
+          reasonCode: "incompatible_metadata",
           candidates:
             [first, second],
           calculation:
@@ -1081,8 +1243,8 @@ app.post(
       const result =
         computeArithmetic(
           operation,
-          first.value,
-          second.value,
+          normalized.firstValue,
+          normalized.secondValue,
         );
 
       if (result === null) {
@@ -1091,6 +1253,7 @@ app.post(
             "insufficient_evidence",
           reason:
             "The requested calculation could not be performed safely with the resolved operands.",
+          reasonCode: "unsafe_calculation",
           candidates:
             [first, second],
           calculation:
@@ -1199,9 +1362,7 @@ app.post(
               ? "percent"
               : operation === "ratio"
                 ? null
-                : first.unit ??
-                  second.unit ??
-                  null,
+                : normalized.unit,
           reportedValue,
           roundingConsistent,
         },
@@ -1231,18 +1392,46 @@ app.post(
 
     const [first, second] =
       selection.operands;
+      const normalized =
+        normalizeFinancialOperandPair(
+          first,
+          second,
+        );
 
-    const result = computeArithmetic(
-      operation,
-      first.value,
-      second.value,
-    );
+      if (
+        normalized.status ===
+        "incompatible"
+      ) {
+        res.json({
+          status:
+            "insufficient_evidence",
+          reason:
+            "The requested values do not have compatible currency and unit metadata.",
+          reasonCode: "incompatible_metadata",
+          candidates:
+            [first, second],
+          calculation:
+            null,
+        });
+
+        return;
+      }
+
+      const result =
+        computeArithmetic(
+          operation,
+          normalized.firstValue,
+          normalized.secondValue,
+        );
 
     if (result === null) {
       res.json({
         status: "insufficient_evidence",
         reason:
           "The requested calculation could not be completed safely.",
+        reasonCode: "unsafe_calculation",
+        candidates:
+          [first, second],
         calculation: null,
       });
       return;
@@ -1278,6 +1467,52 @@ app.use(
 });
   },
 );
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
