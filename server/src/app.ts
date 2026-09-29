@@ -1587,7 +1587,12 @@ app.use(
 
       return;
     }
-    console.error(error);
+    console.error("Unhandled request error", {
+      name: error.name,
+      code: error.code ?? null,
+      type: error.type ?? null,
+      status: error.status ?? null,
+    });
 
     res.status(500).json({
       error:
@@ -1595,6 +1600,7 @@ app.use(
     });
   },
 );
+
 
 
 

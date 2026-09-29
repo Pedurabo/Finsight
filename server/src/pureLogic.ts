@@ -374,18 +374,7 @@ export function haveCompatibleFinancialMetadata(
     unit?: string | null;
   },
 ): boolean {
-  if (
-    first.currencyStatus === "ambiguous" ||
-    second.currencyStatus === "ambiguous" ||
-    first.unitStatus === "ambiguous" ||
-    second.unitStatus === "ambiguous"
-  ) {
-    return {
-      status: "incompatible",
-    };
-  }
-
-  const firstCurrency =
+const firstCurrency =
     first.currency ?? null;
 
   const secondCurrency =
@@ -751,3 +740,4 @@ export function exceedsDocumentPageLimit(
 ): boolean {
   return pageCount > maxPages;
 }
+

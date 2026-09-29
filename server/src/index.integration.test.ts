@@ -971,12 +971,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What is the difference between North America revenue and Europe revenue in 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -1003,12 +998,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What is the difference between North America revenue and Europe revenue in 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -1035,12 +1025,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What is the ratio of Europe revenue to North America revenue in 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -1067,12 +1052,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What is the difference between North America revenue and Europe revenue in 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -1099,12 +1079,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What is the ratio of North America revenue to Europe revenue in 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -1131,12 +1106,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What is the difference between North America revenue and Europe revenue in 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("insufficient_evidence");
     expect(response.body.calculation)
@@ -1164,12 +1134,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What is the ratio of North America revenue to Europe revenue in 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("insufficient_evidence");
     expect(response.body.calculation)
@@ -1186,12 +1151,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What was North America assets in 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -1216,12 +1176,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What were North America liabilities in 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -1247,12 +1202,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What was North America equity in 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -1277,12 +1227,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What was the percentage change in North America assets from 2024 to 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -1304,12 +1249,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What is the difference between North America assets and Europe assets in 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -1328,12 +1268,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What is the ratio of North America liabilities to Europe liabilities in 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -1363,12 +1298,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "Subtract North America equity from Europe equity in 2025.",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -1386,12 +1316,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What was North America net income in 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -1416,12 +1341,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What was the percentage change in North America net income from 2024 to 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -1457,12 +1377,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What is the difference between North America net income and Europe net income in 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -1489,12 +1404,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "What is the ratio of North America net income to Europe net income in 2025?",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -1524,12 +1434,7 @@ describe("FinSight HTTP integration", () => {
           question:
             "Subtract North America net income from Europe net income in 2025.",
         });
-
-    console.log(
-      JSON.stringify(response.body, null, 2),
-    );
-
-    expect(response.status).toBe(200);
+expect(response.status).toBe(200);
     expect(response.body.status)
       .toBe("supported");
 
@@ -3911,6 +3816,7 @@ it("rejects a partially invalid extraction instead of using partial evidence", a
     );
   }
 });
+
 
 
 
