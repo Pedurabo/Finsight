@@ -1,3 +1,4 @@
+import { exceedsDocumentPageLimit } from "./pureLogic";
 import {
   describe,
   expect,
@@ -1270,3 +1271,18 @@ it("rejects operands with explicitly ambiguous financial metadata", () => {
     status: "incompatible",
   });
 });
+
+describe("document page limits", () => {
+  it("allows a document at the maximum page count", () => {
+    expect(
+      exceedsDocumentPageLimit(500),
+    ).toBe(false);
+  });
+
+  it("rejects a document above the maximum page count", () => {
+    expect(
+      exceedsDocumentPageLimit(501),
+    ).toBe(true);
+  });
+});
+

@@ -744,3 +744,10 @@ export function selectArithmeticOperands<
 
 
 
+
+export function exceedsDocumentPageLimit(
+  pageCount: number,
+  maxPages = 500,
+): boolean {
+  return pageCount > maxPages;
+}

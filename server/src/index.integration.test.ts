@@ -3139,6 +3139,141 @@ it("rejects malformed verify question bodies", async () => {
   }
 });
 
+it("retains uploaded and extracted files after successful document processing", async () => {
+  const fixturePath =
+    path.resolve(
+      "src",
+      "test-fixtures",
+      "minimal-financial.docx",
+    );
+
+  const response =
+    await request(app)
+      .post("/api/documents")
+      .attach(
+        "document",
+        fixturePath,
+      );
+
+  expect(response.status).toBe(201);
+
+  const documentId =
+    response.body.id;
+
+  expect(typeof documentId).toBe("string");
+
+  const uploadedPath =
+    path.resolve(
+      "uploads",
+      documentId,
+    );
+
+  const extractionPath =
+    path.resolve(
+      "extracted",
+      `${documentId}.json`,
+    );
+
+  try {
+    expect(
+      fs.existsSync(uploadedPath),
+    ).toBe(true);
+
+    expect(
+      fs.existsSync(extractionPath),
+    ).toBe(true);
+
+    expect(response.body).toMatchObject({
+      originalName:
+        "minimal-financial.docx",
+      pageCount: 1,
+      extractionStatus:
+        "complete",
+      ocrUsed: false,
+    });
+  } finally {
+    fs.rmSync(
+      uploadedPath,
+      {
+        force: true,
+      },
+    );
+
+    fs.rmSync(
+      extractionPath,
+      {
+        force: true,
+      },
+    );
+  }
+});
+it("removes an uploaded file when document extraction fails", async () => {
+  const uploadsDirectory =
+    path.resolve("uploads");
+
+  fs.mkdirSync(
+    uploadsDirectory,
+    {
+      recursive: true,
+    },
+  );
+
+  const beforeFiles =
+    new Set(
+      fs.readdirSync(
+        uploadsDirectory,
+      ),
+    );
+
+  const response =
+    await request(app)
+      .post("/api/documents")
+      .attach(
+        "document",
+        Buffer.from(
+          "this is not a valid pdf",
+          "utf8",
+        ),
+        {
+          filename:
+            "vitest-invalid-upload.pdf",
+          contentType:
+            "application/pdf",
+        },
+      );
+
+  expect(response.status).toBe(400);
+
+  const afterFiles =
+    fs.readdirSync(
+      uploadsDirectory,
+    );
+
+  const newlyCreatedFiles =
+    afterFiles.filter(
+      (fileName) =>
+        !beforeFiles.has(fileName),
+    );
+
+  expect(newlyCreatedFiles).toEqual([]);
+});
+it("rejects oversized JSON request bodies", async () => {
+  const response =
+    await request(app)
+      .post(
+        `/api/documents/${documentId}/verify`,
+      )
+      .send({
+        question: "What was revenue in 2025?",
+        padding: "x".repeat(20 * 1024),
+      });
+
+  expect(response.status).toBe(413);
+
+  expect(response.body).toEqual({
+    error: "Request body exceeds maximum size.",
+  });
+});
 it("rejects excessively long questions", async () => {
   const question =
     "x".repeat(2001);
@@ -3164,6 +3299,129 @@ it("rejects excessively long questions", async () => {
   }
 });
 
+it("rejects an extraction that exceeds the maximum page count", async () => {
+  const oversizedDocumentId =
+    "vitest-oversized-page-count-fixture";
+
+  const oversizedExtractionPath =
+    path.resolve(
+      "extracted",
+      `${oversizedDocumentId}.json`,
+    );
+
+  const pages =
+    Array.from(
+      { length: 501 },
+      (_, index) => ({
+        pageNumber: index + 1,
+        source: "embedded_text",
+        text: "Revenue 100",
+      }),
+    );
+
+  fs.writeFileSync(
+    oversizedExtractionPath,
+    JSON.stringify({
+      pages,
+    }),
+    "utf8",
+  );
+
+  try {
+    const pagesResponse =
+      await request(app)
+        .get(
+          `/api/documents/${oversizedDocumentId}/pages`,
+        );
+
+    expect(pagesResponse.status).toBe(422);
+
+    expect(pagesResponse.body).toEqual({
+      error:
+        "Document extraction exceeds maximum page count.",
+    });
+
+    for (const route of [
+      "search",
+      "verify",
+      "calculate",
+    ]) {
+      const response =
+        await request(app)
+          .post(
+            `/api/documents/${oversizedDocumentId}/${route}`,
+          )
+          .send({
+            question:
+              route === "calculate"
+                ? "What is the difference between revenue in 2025 and 2024?"
+                : "What was revenue in 2025?",
+          });
+
+      expect(response.status).toBe(422);
+
+      expect(response.body).toEqual({
+        error:
+          "Document extraction exceeds maximum page count.",
+      });
+    }
+  } finally {
+    fs.rmSync(
+      oversizedExtractionPath,
+      {
+        force: true,
+      },
+    );
+  }
+});
+it("rejects an extraction that exceeds the maximum file size", async () => {
+  const oversizedDocumentId =
+    "vitest-oversized-extraction-file-fixture";
+
+  const oversizedExtractionPath =
+    path.resolve(
+      "extracted",
+      `${oversizedDocumentId}.json`,
+    );
+
+  fs.writeFileSync(
+    oversizedExtractionPath,
+    JSON.stringify({
+      pages: [
+        {
+          pageNumber: 1,
+          source: "embedded_text",
+          text: "x".repeat(
+            8 * 1024 * 1024,
+          ),
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  try {
+    const response =
+      await request(app)
+        .get(
+          `/api/documents/${oversizedDocumentId}/pages`,
+        );
+
+    expect(response.status).toBe(422);
+
+    expect(response.body).toEqual({
+      error:
+        "Document extraction exceeds maximum file size.",
+    });
+  } finally {
+    fs.rmSync(
+      oversizedExtractionPath,
+      {
+        force: true,
+      },
+    );
+  }
+});
 it("returns a controlled error for malformed extraction JSON", async () => {
   const documentId =
     "vitest-malformed-extraction-fixture";
@@ -3607,3 +3865,11 @@ it("rejects a partially invalid extraction instead of using partial evidence", a
     );
   }
 });
+
+
+
+
+
+
+
+

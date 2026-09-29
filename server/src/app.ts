@@ -120,14 +120,35 @@ type DirectNumericClaim = {
 };
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "16kb" }));
 
 const MAX_QUESTION_LENGTH = 2000;
+const MAX_EXTRACTION_PAGES = 500;
+const MAX_EXTRACTION_FILE_SIZE_BYTES = 8 * 1024 * 1024;
 
 function readExtractionJson<T>(
   extractionPath: string,
 ): T | null {
   try {
+    const extractionSize =
+      fs.statSync(extractionPath).size;
+
+    if (
+      extractionSize >
+      MAX_EXTRACTION_FILE_SIZE_BYTES
+    ) {
+      const error =
+        new Error(
+          "Document extraction exceeds maximum file size.",
+        ) as Error & {
+          code?: string;
+        };
+
+      error.code =
+        "EXTRACTION_FILE_SIZE_LIMIT";
+
+      throw error;
+    }
     const parsed: unknown =
       JSON.parse(
         fs.readFileSync(
@@ -148,6 +169,20 @@ function readExtractionJson<T>(
 
     if (!Array.isArray(pages)) {
       return null;
+    }
+
+    if (pages.length > MAX_EXTRACTION_PAGES) {
+      const error =
+        new Error(
+          "Document extraction exceeds maximum page count.",
+        ) as Error & {
+          code?: string;
+        };
+
+      error.code =
+        "EXTRACTION_PAGE_LIMIT";
+
+      throw error;
     }
 
     const pagesAreValid =
@@ -182,7 +217,21 @@ function readExtractionJson<T>(
     }
 
     return parsed as T;
-  } catch {
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (
+        error.code ===
+          "EXTRACTION_PAGE_LIMIT" ||
+        error.code ===
+          "EXTRACTION_FILE_SIZE_LIMIT"
+      )
+    ) {
+      throw error;
+    }
+
     return null;
   }
 }
@@ -324,6 +373,18 @@ app.post(
         ocrUsed,
       });
     } catch (error) {
+      if (
+        req.file?.path &&
+        fs.existsSync(req.file.path)
+      ) {
+        fs.rmSync(
+          req.file.path,
+          {
+            force: true,
+          },
+        );
+      }
+
       next(error);
     }
   },
@@ -1453,103 +1514,56 @@ const resolvePeriodCandidates = (
 
 app.use(
   (
-    error: Error,
+    error: Error & {
+      type?: string;
+      status?: number;
+      code?: string;
+    },
     _req: express.Request,
     res: express.Response,
     _next: express.NextFunction,
   ) => {
+    if (
+      error.type === "entity.too.large" ||
+      error.status === 413
+    ) {
+      res.status(413).json({
+        error:
+          "Request body exceeds maximum size.",
+      });
+
+      return;
+    }
+
+    if (
+      error.code ===
+      "EXTRACTION_FILE_SIZE_LIMIT"
+    ) {
+      res.status(422).json({
+        error:
+          "Document extraction exceeds maximum file size.",
+      });
+
+      return;
+    }
+
+    if (
+      error.code ===
+      "EXTRACTION_PAGE_LIMIT"
+    ) {
+      res.status(422).json({
+        error:
+          "Document extraction exceeds maximum page count.",
+      });
+
+      return;
+    }
+
     console.error(error);
 
     res.status(400).json({
       error: error.message,
-    
-
-});
+    });
   },
 );
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
