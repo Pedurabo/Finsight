@@ -83,20 +83,26 @@ const upload = multer({
       file.originalname.toLowerCase();
 
     const isPdf =
-      file.mimetype === "application/pdf" ||
-      lowerName.endsWith(".pdf");
+      lowerName.endsWith(".pdf") &&
+      file.mimetype === "application/pdf";
 
     const isDocx =
+      lowerName.endsWith(".docx") &&
       file.mimetype ===
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-      lowerName.endsWith(".docx");
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
     if (!isPdf && !isDocx) {
-      callback(
+      const error =
         new Error(
-          "FinSight accepts PDF and DOCX documents.",
-        ),
-      );
+          "File extension and MIME type must match a supported PDF or DOCX document.",
+        ) as Error & {
+          code?: string;
+        };
+
+      error.code =
+        "INVALID_UPLOAD_TYPE";
+
+      callback(error);
       return;
     }
 
@@ -1524,6 +1530,17 @@ app.use(
     _next: express.NextFunction,
   ) => {
     if (
+      error.type === "entity.parse.failed"
+    ) {
+      res.status(400).json({
+        error:
+          "Invalid JSON request body.",
+      });
+
+      return;
+    }
+
+    if (
       error.type === "entity.too.large" ||
       error.status === 413
     ) {
@@ -1559,11 +1576,27 @@ app.use(
       return;
     }
 
+    if (
+      error.code ===
+      "INVALID_UPLOAD_TYPE"
+    ) {
+      res.status(400).json({
+        error:
+          "File extension and MIME type must match a supported PDF or DOCX document.",
+      });
+
+      return;
+    }
     console.error(error);
 
-    res.status(400).json({
-      error: error.message,
+    res.status(500).json({
+      error:
+        "Internal server error.",
     });
   },
 );
+
+
+
+
 

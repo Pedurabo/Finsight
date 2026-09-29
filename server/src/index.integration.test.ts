@@ -3139,6 +3139,31 @@ it("rejects malformed verify question bodies", async () => {
   }
 });
 
+it("rejects uploads whose MIME type conflicts with the file extension", async () => {
+  const response =
+    await request(app)
+      .post("/api/documents")
+      .attach(
+        "document",
+        Buffer.from(
+          "not really a pdf",
+          "utf8",
+        ),
+        {
+          filename:
+            "vitest-mime-mismatch.pdf",
+          contentType:
+            "text/plain",
+        },
+      );
+
+  expect(response.status).toBe(400);
+
+  expect(response.body).toEqual({
+    error:
+      "File extension and MIME type must match a supported PDF or DOCX document.",
+  });
+});
 it("retains uploaded and extracted files after successful document processing", async () => {
   const fixturePath =
     path.resolve(
@@ -3242,7 +3267,7 @@ it("removes an uploaded file when document extraction fails", async () => {
         },
       );
 
-  expect(response.status).toBe(400);
+  expect(response.status).toBe(500);
 
   const afterFiles =
     fs.readdirSync(
@@ -3256,6 +3281,27 @@ it("removes an uploaded file when document extraction fails", async () => {
     );
 
   expect(newlyCreatedFiles).toEqual([]);
+});
+it("does not expose JSON parser details for malformed request bodies", async () => {
+  const response =
+    await request(app)
+      .post(
+        `/api/documents/${documentId}/verify`,
+      )
+      .set(
+        "Content-Type",
+        "application/json",
+      )
+      .send(
+        '{"question":"What was revenue in 2025?"',
+      );
+
+  expect(response.status).toBe(400);
+
+  expect(response.body).toEqual({
+    error:
+      "Invalid JSON request body.",
+  });
 });
 it("rejects oversized JSON request bodies", async () => {
   const response =
@@ -3865,6 +3911,9 @@ it("rejects a partially invalid extraction instead of using partial evidence", a
     );
   }
 });
+
+
+
 
 
 
