@@ -515,3 +515,12 @@ textarea:focus {
   color: #6b7280;
   font-size: 12px;
 }
+
+.answer-guidance {
+  margin: 12px 0 0;
+  max-width: 720px;
+  color: #7a5518;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
