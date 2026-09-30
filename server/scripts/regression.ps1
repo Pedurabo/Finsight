@@ -1,9 +1,60 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string]$DocumentId
+    [string]$DocumentId,
+
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[A-Fa-f0-9]{64}$')]
+    [string]$ExpectedUploadSha256,
+
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[A-Fa-f0-9]{64}$')]
+    [string]$ExpectedExtractionSha256
 )
 
 $BaseUrl = "http://127.0.0.1:3001"
+$ServerRoot = Split-Path -Parent $PSScriptRoot
+$UploadPath = Join-Path $ServerRoot "uploads\$DocumentId"
+$ExtractionPath = Join-Path $ServerRoot "extracted\$DocumentId.json"
+
+function Assert-CorpusArtifact {
+    param(
+        [string]$Label,
+        [string]$Path,
+        [string]$ExpectedSha256
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-Host "CORPUS FAIL  $Label is missing"
+        Write-Host "             $Path"
+        exit 1
+    }
+
+    $actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+    $expected = $ExpectedSha256.ToUpperInvariant()
+
+    if ($actual -ne $expected) {
+        Write-Host "CORPUS FAIL  $Label SHA256 mismatch"
+        Write-Host "             Expected: $expected"
+        Write-Host "             Actual:   $actual"
+        exit 1
+    }
+
+    Write-Host "CORPUS PASS  $Label SHA256 verified"
+}
+
+Write-Host ""
+Write-Host "=== CORPUS INTEGRITY ==="
+
+Assert-CorpusArtifact `
+    -Label "upload" `
+    -Path $UploadPath `
+    -ExpectedSha256 $ExpectedUploadSha256
+
+Assert-CorpusArtifact `
+    -Label "extraction" `
+    -Path $ExtractionPath `
+    -ExpectedSha256 $ExpectedExtractionSha256
+
 
 $passed = 0
 $failed = 0
