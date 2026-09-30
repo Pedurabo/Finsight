@@ -1,17 +1,57 @@
+[CmdletBinding(DefaultParameterSetName = "Manual")]
 param(
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = "Manual")]
     [string]$DocumentId,
 
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = "Manual")]
     [ValidatePattern('^[A-Fa-f0-9]{64}$')]
     [string]$ExpectedUploadSha256,
 
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = "Manual")]
     [ValidatePattern('^[A-Fa-f0-9]{64}$')]
-    [string]$ExpectedExtractionSha256
+    [string]$ExpectedExtractionSha256,
+
+    [Parameter(Mandatory = $true, ParameterSetName = "Manifest")]
+    [string]$ManifestPath
 )
 
 $BaseUrl = "http://127.0.0.1:3001"
+
+if ($PSCmdlet.ParameterSetName -eq "Manifest") {
+    if (-not (Test-Path -LiteralPath $ManifestPath)) {
+        throw "Regression manifest not found: $ManifestPath"
+    }
+
+    $resolvedManifestPath = (Resolve-Path -LiteralPath $ManifestPath).Path
+
+    try {
+        $manifest = Get-Content -LiteralPath $resolvedManifestPath -Raw |
+            ConvertFrom-Json
+    }
+    catch {
+        throw "Regression manifest is not valid JSON: $resolvedManifestPath"
+    }
+
+    $DocumentId = [string]$manifest.documentId
+    $ExpectedUploadSha256 = [string]$manifest.uploadSha256
+    $ExpectedExtractionSha256 = [string]$manifest.extractionSha256
+
+    if ([string]::IsNullOrWhiteSpace($DocumentId)) {
+        throw "Regression manifest is missing documentId."
+    }
+
+    if ($ExpectedUploadSha256 -notmatch '^[A-Fa-f0-9]{64}$') {
+        throw "Regression manifest uploadSha256 is invalid."
+    }
+
+    if ($ExpectedExtractionSha256 -notmatch '^[A-Fa-f0-9]{64}$') {
+        throw "Regression manifest extractionSha256 is invalid."
+    }
+
+    Write-Host "Manifest: $resolvedManifestPath"
+    Write-Host "Corpus:   $($manifest.name)"
+}
+
 $ServerRoot = Split-Path -Parent $PSScriptRoot
 $UploadPath = Join-Path $ServerRoot "uploads\$DocumentId"
 $ExtractionPath = Join-Path $ServerRoot "extracted\$DocumentId.json"
