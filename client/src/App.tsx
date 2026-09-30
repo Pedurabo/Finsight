@@ -5,6 +5,9 @@ import {
 import type { ChangeEvent } from "react";
 import "./App.css";
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ??
+  "http://127.0.0.1:3001";
 type UploadedDocument = {
   id: string;
   originalName: string;
@@ -111,7 +114,6 @@ function App() {
 
   const [calculation, setCalculation] =
     useState<CalculationResult | null>(null);
-  const [searchStatus, setSearchStatus] = useState("Idle");
 
   const handleChooseDocument = () => {
     fileInputRef.current?.click();
@@ -157,7 +159,7 @@ function App() {
       formData.append("document", file);
 
       const response = await fetch(
-        "http://127.0.0.1:3001/api/documents",
+        `${API_BASE_URL}/api/documents`,
         {
           method: "POST",
           body: formData,
@@ -198,28 +200,22 @@ function App() {
   };
 
   const handleAnalyze = async () => {
-    setSearchStatus("Analyze clicked");
-
     if (!document) {
       setSearchError("No document is loaded.");
-      setSearchStatus("Blocked: no document");
       return;
     }
 
     if (!question.trim()) {
       setSearchError("Enter a question before analyzing.");
-      setSearchStatus("Blocked: empty question");
       return;
     }
 
     setIsSearching(true);
     setSearchError("");
     setEvidence([]);
-    setSearchStatus("Sending request...");
-
     try {
       const response = await fetch(
-        `http://127.0.0.1:3001/api/documents/${encodeURIComponent(
+        `${API_BASE_URL}/api/documents/${encodeURIComponent(
           document.id,
         )}/search`,
         {
@@ -242,10 +238,8 @@ function App() {
       }
 
       setEvidence(data.results ?? []);
-      setSearchStatus(`Received ${data.results?.length ?? 0} result(s)`);
-
       const calculationResponse = await fetch(
-        `http://127.0.0.1:3001/api/documents/${encodeURIComponent(
+        `${API_BASE_URL}/api/documents/${encodeURIComponent(
           document.id,
         )}/calculate`,
         {
@@ -276,7 +270,7 @@ function App() {
         setCalculation(null);
 
         const verificationResponse = await fetch(
-          `http://127.0.0.1:3001/api/documents/${encodeURIComponent(
+          `${API_BASE_URL}/api/documents/${encodeURIComponent(
             document.id,
           )}/verify`,
           {
@@ -308,7 +302,6 @@ function App() {
           ? error.message
           : "Could not retrieve evidence.",
       );
-      setSearchStatus("Request failed");
     } finally {
       setIsSearching(false);
     }
@@ -462,7 +455,6 @@ function App() {
           )}
 
           <div className="evidence-section">
-            <p><strong>Search status:</strong> {searchStatus}</p>
             <h3>Retrieved evidence</h3>
 
             {evidence.length > 0 ? (
@@ -709,6 +701,9 @@ function App() {
 }
 
 export default App;
+
+
+
 
 
 
