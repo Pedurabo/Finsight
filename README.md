@@ -262,26 +262,40 @@ Improved PDF compatibility therefore remains a future extraction-engine enhancem
 
 ## Regression Corpus
 
-The financial reasoning suite has extensive synthetic and integration coverage.
+FinSight now includes a hash-verified, multi-year real-document regression corpus alongside its synthetic and HTTP integration coverage.
 
-The Microsoft FY2025 10-K regression fixture has now been independently verified against Microsoft's official source document.
+The corpus currently contains independently verified Microsoft FY2024 and FY2025 10-K documents sourced from Microsoft.
 
-The stored upload SHA-256 matches the official Microsoft FY2025 10-K binary, the paired extraction artifact has its own verified SHA-256, and the regression script validates both hashes before running financial assertions.
+Each corpus manifest records:
 
-This protects the real-document regression path from silently running against mismatched or replaced corpus artifacts.
+- the original source URL
+- the stored document identifier
+- the upload SHA-256
+- the extracted-artifact SHA-256
+- expected financial values used by the regression suite
+- the regression profile appropriate for that document
 
-An earlier manual UI session produced unrelated OCR evidence during a Microsoft-document test. That anomalous session has not been reproduced at the stored upload/extraction layer and is tracked separately from the verified regression corpus.
+The regression script validates both the stored upload and extraction hashes before running any financial assertions. This prevents real-document tests from silently running against replaced, mismatched, or corrupted corpus artifacts.
+
+Current verified corpus coverage:
+
+- **Microsoft FY2025 10-K — `full-financial` profile: 46/46 assertions passing.** This covers generic and scoped verification, period comparisons, differences, ordered subtraction, ratios, percentage change, cross-scope arithmetic, unsupported scopes, ambiguous requests, and safe abstention behavior.
+- **Microsoft FY2024 10-K — `generic-financial` profile: 12/12 assertions passing.** This validates consolidated revenue reasoning, percentage-change arithmetic, corpus integrity, and conservative abstention where the current extraction structure does not safely resolve segment-level evidence.
+
+An earlier manual UI session produced unrelated OCR evidence during a Microsoft-document test. That anomalous session has not been reproduced at the stored upload/extraction layer and remains separate from the verified corpus.
 
 ## Development Roadmap
 
+The core financial reasoning backend and regression infrastructure are now considered mature and are intentionally frozen unless a concrete defect or production requirement justifies reopening them.
+
 Next meaningful milestones:
 
-1. expand the hash-verified real-document regression corpus
-2. improve PDF extraction compatibility
-3. expand manual end-to-end client verification
-4. continue responsive and accessibility improvements
-5. broaden real financial-report coverage
-6. prepare deployment and production observability
+1. complete final manual end-to-end product verification
+2. improve responsive and accessibility polish
+3. improve compatibility with large or print-generated PDFs
+4. prepare deployment and production observability
+5. broaden real financial-report coverage only where it adds meaningful product value
+6. prepare final demo, screenshots, and portfolio presentation
 
 ## Project Philosophy
 
