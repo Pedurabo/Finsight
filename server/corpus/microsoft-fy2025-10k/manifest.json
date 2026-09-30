@@ -1,0 +1,12 @@
+{
+  "name": "Microsoft FY2025 10-K",
+  "sourceUrl": "https://cdn-dynmedia-1.microsoft.com/is/content/microsoftcorp/MSFT_FY25q4_10K",
+  "documentId": "1790500547621-MSFT_FY25q4_10K.docx",
+  "uploadSha256": "777ED663455C01710AAF9235A74AD5044CC0ADE639BAEB9BDA20889E0994B22F",
+  "extractionSha256": "297D0FB883D40730C7BC93F652947EEC843C0DEC812309113D843BE50BD72252",
+  "expectedChecks": {
+    "revenue2025": "281724",
+    "intelligentCloudRevenue2025": "106265",
+    "morePersonalComputingOperatingIncome2025": "14166"
+  }
+}
