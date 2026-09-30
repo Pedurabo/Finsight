@@ -1,12 +1,35 @@
 # FinSight
 
-FinSight is a financial-document analysis system focused on extracting, reconciling, verifying, and calculating financial information from source documents while preserving evidence provenance and abstaining when evidence is insufficient or conflicting.
+FinSight is a financial-document research workbench for extracting, retrieving, reconciling, verifying, and calculating financial information from PDF and DOCX documents while preserving evidence provenance.
 
-## Current Backend Status
+FinSight favors conservative financial reasoning: when evidence is missing, ambiguous, incompatible, or conflicting, the system abstains instead of manufacturing an answer.
 
-The financial reasoning engine is substantially complete. Current development is focused on production hardening, resource limits, security, observability, and broader real-document regression testing.
+## Project Status
 
-### Supported Financial Metrics
+FinSight currently has a mature financial-reasoning backend and a functional React research-workbench client.
+
+The backend reasoning layer is frozen at its current validated baseline while future work focuses on extraction robustness, real-document regression coverage, and product refinement.
+
+### Current release gates
+
+Backend:
+
+- TypeScript type-check passes with `npm run typecheck`
+- Automated test suite passes with 234 tests
+- Unit, integration, financial-evidence, and evidence-policy coverage
+- Controlled API error handling and resource limits
+
+Client:
+
+- Production build passes with `npm run build`
+- ESLint passes with `npm run lint`
+- Configurable API base URL
+- Answer-first financial analysis experience
+- Structured insufficient-evidence guidance
+- Evidence and provenance presentation
+- Componentized React architecture
+
+## Supported Financial Metrics
 
 - Revenue
 - Operating Income
@@ -16,7 +39,7 @@ The financial reasoning engine is substantially complete. Current development is
 - Liabilities
 - Equity
 
-### Supported Calculations
+## Supported Calculations
 
 - Difference
 - Ordered subtraction
@@ -27,27 +50,47 @@ The financial reasoning engine is substantially complete. Current development is
 
 Calculations preserve operand provenance and normalize compatible financial scales before arithmetic.
 
-## Evidence and Reconciliation
+## Evidence Reconciliation
 
-FinSight currently supports:
+FinSight reconciles multiple candidate values conservatively.
+
+Current behavior includes:
 
 - original vs. restated evidence
 - restatement precedence
 - conflicting-restatement abstention
+- conflicting-original abstention unless supported evidence quality resolves the conflict
+- conservative handling of unknown revision relationships
 - embedded-text precedence over conflicting OCR when revision status is equivalent
 - duplicate evidence reconciliation
-- evidence provenance propagation
-- conservative handling of ambiguous or conflicting evidence
+- provenance propagation through verification and calculations
+
+Evidence-selection policies include:
+
+- `single_candidate`
+- `consistent_evidence`
+- `restatement_precedence`
+- `embedded_text_precedence`
 
 ## Currency and Scale Handling
 
-The backend supports explicit financial metadata including currencies and thousand/million/billion scales.
+FinSight preserves explicit currency and scale metadata.
 
-Compatible scales are normalized before calculations. FinSight does not guess currencies from locale and does not perform foreign-exchange conversion.
+Supported behavior includes:
+
+- ISO-style currency handling
+- explicit ISO currency precedence over `$`
+- lowercase currency normalization
+- ambiguity rejection
+- thousand, million, and billion scale normalization
+- compatible operand scale conversion before arithmetic
+- rejection of incompatible currencies
+- no locale-based currency guessing
+- no foreign-exchange conversion
 
 ## Structured Abstention
 
-FinSight returns structured insufficient-evidence responses instead of manufacturing answers.
+FinSight returns structured insufficient-evidence responses when a result cannot be established safely.
 
 Current reason codes include:
 
@@ -60,11 +103,23 @@ Current reason codes include:
 - `incompatible_metadata`
 - `unsafe_calculation`
 
-## Extraction Safety
+The client translates these codes into concise user-facing guidance while retaining the backend's detailed reasoning.
 
-The backend validates stored extraction data before it reaches financial reasoning.
+## Document Extraction
 
-Current handling includes:
+FinSight accepts:
+
+- PDF
+- DOCX
+
+Extraction provenance is recorded as:
+
+- `embedded_text`
+- `ocr`
+
+The backend validates extraction data before financial reasoning is performed.
+
+Handled extraction conditions include:
 
 - malformed extraction JSON
 - invalid extraction root structures
@@ -72,44 +127,93 @@ Current handling includes:
 - unsupported provenance values
 - partially corrupt extractions
 - missing extraction files
-- valid but empty extractions
+- empty but valid extractions
+- excessive page counts
+- excessive extraction file sizes
 
-Supported extraction sources:
+## API Hardening
 
-- `embedded_text`
-- `ocr`
+The backend includes explicit validation and limits for:
 
-Lifecycle behavior:
-
-- missing extraction -> HTTP 404
-- corrupt or invalid extraction -> controlled HTTP 500
-- valid extraction with no usable evidence -> HTTP 200 with `insufficient_evidence`
-
-## API Validation
-
-Financial and search endpoints currently enforce:
-
-- required questions
-- trimmed non-empty questions
-- string question values
-- maximum question length
+- 16 KB JSON request bodies
+- 2,000-character questions
+- 500-page extraction maximum
+- 8 MiB extraction JSON maximum
+- 30 MiB upload maximum
 - safe document identifiers
-- consistent missing-extraction responses
+- MIME type and extension consistency
+- malformed request bodies
+- invalid uploads
+- failed-upload cleanup
+- controlled unknown-error responses
 
-Relevant endpoints:
+Relevant endpoints include:
 
 - `GET /api/documents/:id/pages`
 - `POST /api/documents/:id/search`
 - `POST /api/documents/:id/verify`
 - `POST /api/documents/:id/calculate`
 
-## Testing
+## Client Experience
 
-FinSight has unit, integration, evidence-policy, financial-evidence, and real-document regression coverage.
+The React client is organized as a research workbench with three primary areas:
 
-The regression suite currently includes a Microsoft FY2025 Q4 / 10-K document and verifies financial extraction and calculation behavior against real document evidence.
+1. document sources
+2. question, answer, and retrieved evidence
+3. provenance and calculation details
 
-## Backend Development
+The answer is presented as the primary analysis result.
+
+Supported results display the resolved metric and value prominently.
+
+When FinSight abstains, the client can display guidance such as:
+
+- Required evidence is missing
+- Conflicting values were found
+- Financial metadata does not match
+- The request is ambiguous
+- That metric is not supported
+- The calculation cannot be completed safely
+
+The detailed backend reason remains visible for traceability.
+
+## Client Architecture
+
+The client uses React, TypeScript, and Vite.
+
+Presentation is separated into focused components:
+
+```text
+client/src/
+├── components/
+│   ├── AnswerCard.tsx
+│   ├── EvidenceList.tsx
+│   ├── ProvenancePanel.tsx
+│   ├── QuestionPanel.tsx
+│   └── SourcePanel.tsx
+├── App.tsx
+├── App.css
+├── types.ts
+└── main.tsx
+```
+
+`App.tsx` retains application state and API orchestration while presentation is delegated to the component layer.
+
+## Configuration
+
+The client supports a configurable backend URL:
+
+```text
+VITE_API_BASE_URL=http://127.0.0.1:3001
+```
+
+See `client/.env.example`.
+
+If the environment variable is not defined, the development client defaults to `http://127.0.0.1:3001`.
+
+## Development
+
+### Backend
 
 From the `server` directory:
 
@@ -118,53 +222,67 @@ npm install
 npm run dev
 ```
 
+Run the backend type-check:
+
+```bash
+npm run typecheck
+```
+
 Run the automated test suite:
 
 ```bash
 npm test
 ```
 
-Run the real-document regression script from PowerShell:
+### Client
 
-```powershell
-.\scripts\regression.ps1 `
-  -DocumentId "1790500547621-MSFT_FY25q4_10K.docx"
+From the `client` directory:
+
+```bash
+npm install
+npm run dev
 ```
 
-## Repository Structure
+Production validation:
 
-```text
-FinSight/
-├── client/
-└── server/
-    ├── scripts/
-    ├── src/
-    ├── extracted/
-    ├── uploads/
-    ├── package.json
-    └── tsconfig.json
+```bash
+npm run build
+npm run lint
 ```
 
-Core backend logic currently lives primarily in:
+## Known Extraction Work
 
-- `server/src/app.ts`
-- `server/src/pureLogic.ts`
-- `server/src/evidencePolicy.ts`
-- `server/src/financialEvidence.ts`
+Financial reasoning and client behavior are currently more mature than the extraction layer.
+
+Some large or print-generated PDFs can be rejected by the current PDF parser before OCR can run.
+
+A fallback extraction experiment was evaluated but intentionally not merged because the large-document path remained too expensive and unreliable.
+
+Improved PDF compatibility therefore remains a future extraction-engine enhancement.
+
+## Regression Corpus Note
+
+The financial reasoning suite has extensive synthetic and integration coverage.
+
+During later manual regression work, a Microsoft-named stored upload was discovered to contain unrelated document content while its existing extracted evidence represented financial material.
+
+Because that upload binary and extraction artifact do not correspond, the pair should not be treated as a clean end-to-end real-document regression fixture.
+
+The real-document regression corpus should be rebuilt with verified source-document hashes before broader regression claims are made.
 
 ## Development Roadmap
 
-Next backend milestones:
+Next meaningful milestones:
 
-1. resource and performance limits
-2. security and productization hardening
-3. observability and debug-output cleanup
-4. explicit build/type-check release gate
-5. broader real-document regression corpus
-6. final backend verification and freeze
+1. rebuild and verify the real-document regression corpus
+2. improve PDF extraction compatibility
+3. expand manual end-to-end client verification
+4. continue responsive and accessibility improvements
+5. broaden real financial-report coverage
+6. prepare deployment and production observability
 
 ## Project Philosophy
 
 FinSight favors traceable evidence and explicit uncertainty over unsupported certainty.
 
-When financial evidence cannot be reconciled safely, the system is designed to abstain and expose the reason rather than fabricate a deterministic result.
+When financial evidence cannot be reconciled safely, the system is designed to abstain, expose the reason, and preserve the evidence needed for human review.
