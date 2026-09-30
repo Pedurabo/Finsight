@@ -454,6 +454,89 @@ function App() {
             </div>
           )}
 
+          {(calculation || verification) && (
+            <section
+              className={`answer-card ${
+                calculation?.status === "supported" ||
+                verification?.status === "supported"
+                  ? "answer-supported"
+                  : "answer-insufficient"
+              }`}
+            >
+              <div className="answer-header">
+                <span className="answer-eyebrow">
+                  FinSight answer
+                </span>
+
+                <span className="answer-status">
+                  {calculation?.status === "supported" ||
+                  verification?.status === "supported"
+                    ? "Supported"
+                    : "Insufficient evidence"}
+                </span>
+              </div>
+
+              {calculation?.calculation ? (
+                <>
+                  <p className="answer-metric">
+                    {calculation.calculation.metric}
+                  </p>
+
+                  <p className="answer-value">
+                    {calculation.calculation.result}
+                    {calculation.calculation.unit ===
+                    "percent"
+                      ? "%"
+                      : ""}
+                    {calculation.calculation.currency
+                      ? ` ${calculation.calculation.currency}`
+                      : ""}
+                    {calculation.calculation.unit &&
+                    calculation.calculation.unit !==
+                      "percent"
+                      ? ` ${calculation.calculation.unit}`
+                      : ""}
+                  </p>
+
+                  <p className="answer-reason">
+                    {calculation.reason}
+                  </p>
+                </>
+              ) : verification?.claim ? (
+                <>
+                  <p className="answer-metric">
+                    {verification.claim.metric}
+                  </p>
+
+                  <p className="answer-value">
+                    {verification.claim.value}
+                  </p>
+
+                  <p className="answer-reason">
+                    {verification.reason}
+                  </p>
+
+                  <p className="answer-citation">
+                    Page {verification.claim.pageNumber} ·{" "}
+                    {verification.claim.source === "ocr"
+                      ? "OCR"
+                      : "Embedded text"}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="answer-value answer-message">
+                    FinSight could not safely verify an answer.
+                  </p>
+
+                  <p className="answer-reason">
+                    {verification?.reason ??
+                      calculation?.reason}
+                  </p>
+                </>
+              )}
+            </section>
+          )}
           <div className="evidence-section">
             <h3>Retrieved evidence</h3>
 
@@ -502,28 +585,9 @@ function App() {
         </section>
 
         <aside className="panel verification-panel">
-          <h2>Verification</h2>
-
-          <div className="status-card">
-            <span className="status-label">
-              Status
-            </span>
-
-            <strong>
-              {calculation
-                ? calculation.status === "supported"
-                  ? "Supported"
-                  : "Insufficient evidence"
-                : verification
-                  ? verification.status === "supported"
-                    ? "Supported"
-                    : "Insufficient evidence"
-                  : "Not evaluated"}
-            </strong>
-          </div>
-
-          <div className="provenance-section">
-            <h3>Provenance</h3>
+          <h2>Provenance</h2>
+<div className="provenance-section">
+            <h3>Evidence details</h3>
 
             {calculation?.calculation ? (
               <>
@@ -701,6 +765,7 @@ function App() {
 }
 
 export default App;
+
 
 
 
