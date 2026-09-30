@@ -1,0 +1,19 @@
+{
+  "name": "Microsoft FY2024 10-K",
+  "sourceUrl": "https://cdn-dynmedia-1.microsoft.com/is/content/microsoftcorp/MSFT_FY24Q4_10K",
+  "documentId": "1790752323267-MSFT_FY2024_10K.docx",
+  "uploadSha256": "D2634A95701E31734089F6F8F7E080E1FB3CEB44C7A9E7442BD28744D8EC7AB0",
+  "extractionSha256": "40807E2B671F10EFAA61D97E1039239505AA2380F013E5D13148270E2B7DAA16",
+  "expectedChecks": {
+    "currentYear": 2024,
+    "priorYear": 2023,
+    "revenueCurrent": 245122,
+    "intelligentCloudRevenueCurrent": 105362,
+    "intelligentCloudRevenuePrior": 87907,
+    "morePersonalComputingRevenueCurrent": 62032,
+    "morePersonalComputingOperatingIncomeCurrent": 19309,
+    "productivityBusinessProcessesRevenueCurrent": 77728,
+    "revenuePrior": 211915
+  },
+  "regressionProfile": "generic-financial"
+}

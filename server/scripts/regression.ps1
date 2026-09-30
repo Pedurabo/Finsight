@@ -52,6 +52,71 @@ if ($PSCmdlet.ParameterSetName -eq "Manifest") {
     Write-Host "Corpus:   $($manifest.name)"
 }
 
+$RegressionProfile = "full-financial"
+$CurrentYear = 2025
+$PriorYear = 2024
+$RevenueCurrent = 281724
+$RevenuePrior = 245122
+$IntelligentCloudRevenueCurrent = 106265
+$IntelligentCloudRevenuePrior = 87464
+$MorePersonalComputingRevenueCurrent = 54649
+$MorePersonalComputingOperatingIncomeCurrent = 14166
+$ProductivityBusinessProcessesRevenueCurrent = 120810
+
+if ($PSCmdlet.ParameterSetName -eq "Manifest") {
+    $checks = $manifest.expectedChecks
+
+    $RegressionProfile = [string]$manifest.regressionProfile
+
+    if ($RegressionProfile -notin @("full-financial", "generic-financial")) {
+        throw "Regression manifest regressionProfile is invalid."
+    }
+
+    $requiredChecks = @(
+        "currentYear",
+        "priorYear",
+        "revenueCurrent",
+        "revenuePrior",
+        "intelligentCloudRevenueCurrent",
+        "intelligentCloudRevenuePrior",
+        "morePersonalComputingRevenueCurrent",
+        "morePersonalComputingOperatingIncomeCurrent",
+        "productivityBusinessProcessesRevenueCurrent"
+    )
+
+    foreach ($field in $requiredChecks) {
+        if ($null -eq $checks.$field) {
+            throw "Regression manifest expectedChecks is missing $field."
+        }
+    }
+
+    $CurrentYear = [int]$checks.currentYear
+    $PriorYear = [int]$checks.priorYear
+    $RevenueCurrent = [double]$checks.revenueCurrent
+    $RevenuePrior = [double]$checks.revenuePrior
+    $IntelligentCloudRevenueCurrent = [double]$checks.intelligentCloudRevenueCurrent
+    $IntelligentCloudRevenuePrior = [double]$checks.intelligentCloudRevenuePrior
+    $MorePersonalComputingRevenueCurrent = [double]$checks.morePersonalComputingRevenueCurrent
+    $MorePersonalComputingOperatingIncomeCurrent = [double]$checks.morePersonalComputingOperatingIncomeCurrent
+    $ProductivityBusinessProcessesRevenueCurrent = [double]$checks.productivityBusinessProcessesRevenueCurrent
+}
+
+$RevenuePercentage = (($RevenueCurrent - $RevenuePrior) / $RevenuePrior) * 100
+$RevenueReportedPercentage = [math]::Round($RevenuePercentage)
+
+$IntelligentCloudPercentage = (
+    ($IntelligentCloudRevenueCurrent - $IntelligentCloudRevenuePrior) /
+    $IntelligentCloudRevenuePrior
+) * 100
+$IntelligentCloudReportedPercentage = [math]::Round($IntelligentCloudPercentage)
+
+$IntelligentCloudDifference = $IntelligentCloudRevenueCurrent - $IntelligentCloudRevenuePrior
+$IntelligentCloudRatio = $IntelligentCloudRevenueCurrent / $IntelligentCloudRevenuePrior
+
+$CrossScopeDifference = $IntelligentCloudRevenueCurrent - $MorePersonalComputingRevenueCurrent
+$CrossScopeRatio = $ProductivityBusinessProcessesRevenueCurrent / $IntelligentCloudRevenueCurrent
+$CrossScopeSubtraction = $MorePersonalComputingRevenueCurrent - $IntelligentCloudRevenueCurrent
+
 $ServerRoot = Split-Path -Parent $PSScriptRoot
 $UploadPath = Join-Path $ServerRoot "uploads\$DocumentId"
 $ExtractionPath = Join-Path $ServerRoot "extracted\$DocumentId.json"
@@ -155,98 +220,146 @@ function Invoke-FinSight {
         -Body $body
 }
 
+if ($RegressionProfile -eq "generic-financial") {
+    Write-Host ""
+    Write-Host "=== VERIFY ==="
+
+    $r = Invoke-FinSight "verify" "What was revenue in ${CurrentYear}?"
+    Assert-Equal "generic revenue status" $r.status "supported"
+    Assert-Equal "generic revenue value" $r.claim.value "$RevenueCurrent"
+
+    $r = Invoke-FinSight "verify" "What was Intelligent Cloud revenue in ${CurrentYear}?"
+    Assert-Equal "scoped revenue abstention" $r.status "insufficient_evidence"
+
+    $r = Invoke-FinSight "verify" "What was Azure revenue in ${CurrentYear}?"
+    Assert-Equal "unsupported Azure verify" $r.status "insufficient_evidence"
+
+    Write-Host ""
+    Write-Host "=== CALCULATE ==="
+
+    $r = Invoke-FinSight "calculate" "What is the percentage change in revenue from $PriorYear to ${CurrentYear}?"
+    Assert-Equal "generic percentage status" $r.status "supported"
+    Assert-Near "generic percentage result" $r.calculation.result $RevenuePercentage
+    Assert-Equal "generic reported percentage" $r.calculation.reportedValue $RevenueReportedPercentage
+    Assert-Equal "generic rounding consistency" $r.calculation.roundingConsistent $true
+
+    $r = Invoke-FinSight "calculate" "What is the percentage change in Intelligent Cloud revenue from $PriorYear to ${CurrentYear}?"
+    Assert-Equal "scoped percentage abstention" $r.status "insufficient_evidence"
+
+    $r = Invoke-FinSight "calculate" "Subtract Intelligent Cloud revenue in $PriorYear from Intelligent Cloud revenue in $CurrentYear."
+    Assert-Equal "scoped subtraction abstention" $r.status "insufficient_evidence"
+
+    $r = Invoke-FinSight "calculate" "What is the difference between Intelligent Cloud revenue and More Personal Computing revenue in ${CurrentYear}?"
+    Assert-Equal "cross-scope difference abstention" $r.status "insufficient_evidence"
+
+    $r = Invoke-FinSight "calculate" "What is the ratio between Intelligent Cloud revenue and More Personal Computing revenue in ${CurrentYear}?"
+    Assert-Equal "cross-scope vague ratio abstention" $r.status "insufficient_evidence"
+
+    Write-Host ""
+    Write-Host "============================"
+    Write-Host "Passed: $passed"
+    Write-Host "Failed: $failed"
+    Write-Host "============================"
+
+    if ($failed -gt 0) {
+        exit 1
+    }
+
+    exit 0
+}
+
 Write-Host ""
 Write-Host "=== VERIFY ==="
 
-$r = Invoke-FinSight "verify" "What was revenue in 2025?"
+$r = Invoke-FinSight "verify" "What was revenue in ${CurrentYear}?"
 Assert-Equal "generic revenue status" $r.status "supported"
-Assert-Equal "generic revenue value" $r.claim.value "281724"
+Assert-Equal "generic revenue value" $r.claim.value "$RevenueCurrent"
 
-$r = Invoke-FinSight "verify" "What was Intelligent Cloud revenue in 2025?"
+$r = Invoke-FinSight "verify" "What was Intelligent Cloud revenue in ${CurrentYear}?"
 Assert-Equal "scoped revenue status" $r.status "supported"
-Assert-Equal "scoped revenue value" $r.claim.value "106265"
+Assert-Equal "scoped revenue value" $r.claim.value "$IntelligentCloudRevenueCurrent"
 
-$r = Invoke-FinSight "verify" "What was More Personal Computing operating income in 2025?"
+$r = Invoke-FinSight "verify" "What was More Personal Computing operating income in ${CurrentYear}?"
 Assert-Equal "scoped operating income status" $r.status "supported"
-Assert-Equal "scoped operating income value" $r.claim.value "14166"
+Assert-Equal "scoped operating income value" $r.claim.value "$MorePersonalComputingOperatingIncomeCurrent"
 
-$r = Invoke-FinSight "verify" "What was Azure revenue in 2025?"
+$r = Invoke-FinSight "verify" "What was Azure revenue in ${CurrentYear}?"
 Assert-Equal "unsupported Azure verify" $r.status "insufficient_evidence"
 
-$r = Invoke-FinSight "verify" "What was Intelligent Cloud revenue in 2025, compared with More Personal Computing?"
+$r = Invoke-FinSight "verify" "What was Intelligent Cloud revenue in $CurrentYear, compared with More Personal Computing?"
 Assert-Equal "supported distractor status" $r.status "supported"
-Assert-Equal "supported distractor value" $r.claim.value "106265"
+Assert-Equal "supported distractor value" $r.claim.value "$IntelligentCloudRevenueCurrent"
 
-$r = Invoke-FinSight "verify" "What was Azure revenue in 2025, compared with Intelligent Cloud?"
+$r = Invoke-FinSight "verify" "What was Azure revenue in $CurrentYear, compared with Intelligent Cloud?"
 Assert-Equal "unsupported distractor" $r.status "insufficient_evidence"
 
-$r = Invoke-FinSight "verify" "What was Intelligent Cloud revenue and More Personal Computing revenue in 2025?"
+$r = Invoke-FinSight "verify" "What was Intelligent Cloud revenue and More Personal Computing revenue in ${CurrentYear}?"
 Assert-Equal "multi-scope verify" $r.status "insufficient_evidence"
 
 Write-Host ""
 Write-Host "=== CALCULATE ==="
 
-$r = Invoke-FinSight "calculate" "What is the percentage change in revenue from 2024 to 2025?"
+$r = Invoke-FinSight "calculate" "What is the percentage change in revenue from $PriorYear to ${CurrentYear}?"
 Assert-Equal "generic percentage status" $r.status "supported"
-Assert-Near "generic percentage result" $r.calculation.result 14.9322
-Assert-Equal "generic reported percentage" $r.calculation.reportedValue 15
+Assert-Near "generic percentage result" $r.calculation.result $RevenuePercentage
+Assert-Equal "generic reported percentage" $r.calculation.reportedValue $RevenueReportedPercentage
 Assert-Equal "generic rounding consistency" $r.calculation.roundingConsistent $true
 
-$r = Invoke-FinSight "calculate" "What is the percentage change in Intelligent Cloud revenue from 2024 to 2025?"
+$r = Invoke-FinSight "calculate" "What is the percentage change in Intelligent Cloud revenue from $PriorYear to ${CurrentYear}?"
 Assert-Equal "scoped percentage status" $r.status "supported"
-Assert-Near "scoped percentage result" $r.calculation.result 21.4957
-Assert-Equal "scoped reported percentage" $r.calculation.reportedValue 21
+Assert-Near "scoped percentage result" $r.calculation.result $IntelligentCloudPercentage
+Assert-Equal "scoped reported percentage" $r.calculation.reportedValue $IntelligentCloudReportedPercentage
 Assert-Equal "scoped rounding consistency" $r.calculation.roundingConsistent $true
 
-$r = Invoke-FinSight "calculate" "What is the difference in Intelligent Cloud revenue between 2024 and 2025?"
+$r = Invoke-FinSight "calculate" "What is the difference in Intelligent Cloud revenue between $PriorYear and ${CurrentYear}?"
 Assert-Equal "difference status" $r.status "supported"
-Assert-Equal "difference result" $r.calculation.result 18801
+Assert-Equal "difference result" $r.calculation.result $IntelligentCloudDifference
 Assert-Equal "difference currency" $r.calculation.currency "USD"
 Assert-Equal "difference unit" $r.calculation.unit "million"
 
-$r = Invoke-FinSight "calculate" "Subtract Intelligent Cloud revenue in 2024 from Intelligent Cloud revenue in 2025."
+$r = Invoke-FinSight "calculate" "Subtract Intelligent Cloud revenue in $PriorYear from Intelligent Cloud revenue in $CurrentYear."
 Assert-Equal "forward subtraction status" $r.status "supported"
-Assert-Equal "forward subtraction result" $r.calculation.result 18801
+Assert-Equal "forward subtraction result" $r.calculation.result $IntelligentCloudDifference
 
-$r = Invoke-FinSight "calculate" "Subtract Intelligent Cloud revenue in 2025 from Intelligent Cloud revenue in 2024."
+$r = Invoke-FinSight "calculate" "Subtract Intelligent Cloud revenue in $CurrentYear from Intelligent Cloud revenue in $PriorYear."
 Assert-Equal "reverse subtraction status" $r.status "supported"
-Assert-Equal "reverse subtraction result" $r.calculation.result -18801
+Assert-Equal "reverse subtraction result" $r.calculation.result (-$IntelligentCloudDifference)
 
-$r = Invoke-FinSight "calculate" "What is the ratio of Intelligent Cloud revenue in 2025 to Intelligent Cloud revenue in 2024?"
+$r = Invoke-FinSight "calculate" "What is the ratio of Intelligent Cloud revenue in $CurrentYear to Intelligent Cloud revenue in ${PriorYear}?"
 Assert-Equal "explicit ratio status" $r.status "supported"
-Assert-Near "explicit ratio result" $r.calculation.result 1.215 0.0001
+Assert-Near "explicit ratio result" $r.calculation.result $IntelligentCloudRatio 0.0001
 Assert-Equal "ratio currency" $r.calculation.currency $null
 Assert-Equal "ratio unit" $r.calculation.unit $null
 
-$r = Invoke-FinSight "calculate" "What is the ratio of Intelligent Cloud revenue between 2024 and 2025?"
+$r = Invoke-FinSight "calculate" "What is the ratio of Intelligent Cloud revenue between $PriorYear and ${CurrentYear}?"
 Assert-Equal "vague ratio abstention" $r.status "insufficient_evidence"
 
-$r = Invoke-FinSight "calculate" "What is the percentage change in Azure revenue from 2024 to 2025?"
+$r = Invoke-FinSight "calculate" "What is the percentage change in Azure revenue from $PriorYear to ${CurrentYear}?"
 Assert-Equal "unsupported Azure calculate" $r.status "insufficient_evidence"
 
-$r = Invoke-FinSight "calculate" "What is the difference between Intelligent Cloud revenue and More Personal Computing revenue in 2025?"
+$r = Invoke-FinSight "calculate" "What is the difference between Intelligent Cloud revenue and More Personal Computing revenue in ${CurrentYear}?"
 Assert-Equal "cross-scope difference status" $r.status "supported"
-Assert-Equal "cross-scope difference result" $r.calculation.result 51616
+Assert-Equal "cross-scope difference result" $r.calculation.result $CrossScopeDifference
 Assert-Equal "cross-scope difference currency" $r.calculation.currency "USD"
 Assert-Equal "cross-scope difference unit" $r.calculation.unit "million"
 
-$r = Invoke-FinSight "calculate" "What is the ratio of Productivity and Business Processes revenue to Intelligent Cloud revenue in 2025?"
+$r = Invoke-FinSight "calculate" "What is the ratio of Productivity and Business Processes revenue to Intelligent Cloud revenue in ${CurrentYear}?"
 Assert-Equal "cross-scope ratio status" $r.status "supported"
-Assert-Near "cross-scope ratio result" $r.calculation.result 1.1369 0.0001
+Assert-Near "cross-scope ratio result" $r.calculation.result $CrossScopeRatio 0.0001
 Assert-Equal "cross-scope ratio currency" $r.calculation.currency $null
 Assert-Equal "cross-scope ratio unit" $r.calculation.unit $null
 
-$r = Invoke-FinSight "calculate" "Subtract Intelligent Cloud revenue from More Personal Computing revenue in 2025."
+$r = Invoke-FinSight "calculate" "Subtract Intelligent Cloud revenue from More Personal Computing revenue in $CurrentYear."
 Assert-Equal "cross-scope subtraction status" $r.status "supported"
-Assert-Equal "cross-scope subtraction result" $r.calculation.result -51616
+Assert-Equal "cross-scope subtraction result" $r.calculation.result $CrossScopeSubtraction
 
-$r = Invoke-FinSight "calculate" "What is the ratio between Intelligent Cloud revenue and More Personal Computing revenue in 2025?"
+$r = Invoke-FinSight "calculate" "What is the ratio between Intelligent Cloud revenue and More Personal Computing revenue in ${CurrentYear}?"
 Assert-Equal "cross-scope vague ratio abstention" $r.status "insufficient_evidence"
 
-$r = Invoke-FinSight "calculate" "What is the percentage change between Intelligent Cloud revenue and More Personal Computing revenue in 2025?"
+$r = Invoke-FinSight "calculate" "What is the percentage change between Intelligent Cloud revenue and More Personal Computing revenue in ${CurrentYear}?"
 Assert-Equal "cross-scope percentage abstention" $r.status "insufficient_evidence"
 
-$r = Invoke-FinSight "calculate" "What is the percentage change in Intelligent Cloud gross margin from 2024 to 2025?"
+$r = Invoke-FinSight "calculate" "What is the percentage change in Intelligent Cloud gross margin from $PriorYear to ${CurrentYear}?"
 Assert-Equal "missing scoped metric" $r.status "insufficient_evidence"
 
 Write-Host ""
