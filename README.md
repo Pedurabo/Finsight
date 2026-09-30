@@ -260,21 +260,23 @@ A fallback extraction experiment was evaluated but intentionally not merged beca
 
 Improved PDF compatibility therefore remains a future extraction-engine enhancement.
 
-## Regression Corpus Note
+## Regression Corpus
 
 The financial reasoning suite has extensive synthetic and integration coverage.
 
-During later manual regression work, a Microsoft-named stored upload was discovered to contain unrelated document content while its existing extracted evidence represented financial material.
+The Microsoft FY2025 10-K regression fixture has now been independently verified against Microsoft's official source document.
 
-Because that upload binary and extraction artifact do not correspond, the pair should not be treated as a clean end-to-end real-document regression fixture.
+The stored upload SHA-256 matches the official Microsoft FY2025 10-K binary, the paired extraction artifact has its own verified SHA-256, and the regression script validates both hashes before running financial assertions.
 
-The real-document regression corpus should be rebuilt with verified source-document hashes before broader regression claims are made.
+This protects the real-document regression path from silently running against mismatched or replaced corpus artifacts.
+
+An earlier manual UI session produced unrelated OCR evidence during a Microsoft-document test. That anomalous session has not been reproduced at the stored upload/extraction layer and is tracked separately from the verified regression corpus.
 
 ## Development Roadmap
 
 Next meaningful milestones:
 
-1. rebuild and verify the real-document regression corpus
+1. expand the hash-verified real-document regression corpus
 2. improve PDF extraction compatibility
 3. expand manual end-to-end client verification
 4. continue responsive and accessibility improvements
@@ -286,3 +288,4 @@ Next meaningful milestones:
 FinSight favors traceable evidence and explicit uncertainty over unsupported certainty.
 
 When financial evidence cannot be reconciled safely, the system is designed to abstain, expose the reason, and preserve the evidence needed for human review.
+
